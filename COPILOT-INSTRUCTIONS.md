@@ -1,0 +1,5 @@
+- Focus on clean architecture and documentation (Javadoc/JSDoc).
+- Prefer not to hard-pin library versions here. Choose compatible, current versions when implementing.
+- Use Conventional Commits and create a changeset per PR.
+- Do not duplicate utilities—centralize in packages/utils.
+- Dark mode by default on all clients; Tailwind (Web/Electron), NativeWind (React Native).

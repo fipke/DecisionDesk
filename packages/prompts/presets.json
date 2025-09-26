@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "defaults": {
+    "language": "pt-BR",
+    "levels": [
+      "conciso",
+      "normal",
+      "detalhado"
+    ]
+  },
+  "presets": [
+    {
+      "key": "decisiondesk_meeting",
+      "name": "DecisionDesk \u2013 Standard Meeting",
+      "template": "Summarize in PT-BR with sections: Objectives, Decisions, Actions (owner/deadline), Risks, Open Items. Participants: {{participants}}. History: {{history}}. Level: {{level}}."
+    },
+    {
+      "key": "supplier_session",
+      "name": "Supplier Session",
+      "template": "Synthesize evolution vs history: {{history}}. List decisions and open items with owner/deadline. Professional tone. Level: {{level}}."
+    },
+    {
+      "key": "church_service",
+      "name": "Church Service",
+      "template": "Summarize sermon/service in PT-BR: Theme, References, Highlights. Level: {{level}}."
+    }
+  ]
+}
