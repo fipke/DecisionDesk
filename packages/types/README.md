@@ -1,1 +1,1 @@
-Shared TypeScript types and JSON Schemas.
+Shared TS types and JSON Schemas (expand as needed).

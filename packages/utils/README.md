@@ -1,1 +1,1 @@
-Shared utilities: currency, cost estimation, date/time helpers, network estimations.
+Shared utilities (currency, cost calc, date/time, helpers). No duplicates across apps.

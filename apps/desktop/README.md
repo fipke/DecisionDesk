@@ -1,4 +1,3 @@
-# DecisionDesk Desktop (Electron + React)
-
-- SQLite local store, sync with backend.
-- Tailwind/Headless UI; dark mode default.
+# DecisionDesk Desktop (macOS — Electron + React)
+- After iOS MVP: simple upload; view transcript/summary/cost (server-computed).
+- **No OpenAI calls from client**

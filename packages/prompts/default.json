@@ -1,0 +1,5 @@
+{
+  "key": "default_meeting_ptbr",
+  "name": "Default Meeting Summary (pt-BR)",
+  "template": "Resuma em PT-BR, tom profissional, com se\u00e7\u00f5es: Objetivos, Decis\u00f5es, A\u00e7\u00f5es (dono/prazo), Pend\u00eancias. Participantes: {{participants}}. Contexto: {{context}}."
+}

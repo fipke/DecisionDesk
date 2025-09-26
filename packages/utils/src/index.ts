@@ -1,1 +1,2 @@
-/** Placeholder: implement shared utilities here (no duplication across apps). */
+/** Placeholder utils */
+export const toBRL = (value: number) => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value);

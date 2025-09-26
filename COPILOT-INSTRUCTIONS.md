@@ -1,5 +1,6 @@
-- Focus on clean architecture and documentation (Javadoc/JSDoc).
-- Prefer not to hard-pin library versions here. Choose compatible, current versions when implementing.
-- Use Conventional Commits and create a changeset per PR.
-- Do not duplicate utilities—centralize in packages/utils.
-- Dark mode by default on all clients; Tailwind (Web/Electron), NativeWind (React Native).
+- Follow MVP-first roadmap. Document public code (Javadoc/JSDoc).
+- Do not hard-pin versions in seed; pick compatible, current versions.
+- Conventional Commits + one changeset per PR.
+- No duplicated utilities—centralize in packages/utils.
+- Dark mode default on clients; Tailwind (Web/Electron), NativeWind (RN).
+- **Clients must never call OpenAI directly**; all Whisper/GPT happens in backend.

@@ -1,4 +1,3 @@
-# DecisionDesk Web (React)
-
-- Vite-based SPA for management and uploads.
-- Tailwind/Headless UI; dark mode default.
+# DecisionDesk Web (React/Vite)
+- After macOS: simple upload; list meetings; view transcript/summary/cost (server-computed).
+- **No OpenAI calls from client**
