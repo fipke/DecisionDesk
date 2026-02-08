@@ -33,7 +33,7 @@ This module hosts the Spring Boot API for DecisionDesk. Follow the steps below t
 3. Once the service is running, exercise the API:
    ```bash
    # Health probe
-   curl http://localhost:8080/api/v1/health
+   curl http://localhost:8087/api/v1/health
 
    # Create a meeting shell
    curl -sX POST http://localhost:8080/api/v1/meetings | jq

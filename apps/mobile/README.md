@@ -18,7 +18,7 @@
 - Node 18+
 - Expo CLI (`npm install -g expo-cli`)
 - Xcode (para rodar no simulador iOS)
-- Backend rodando em `http://localhost:8080` ou defina `EXPO_PUBLIC_API_BASE_URL`
+- Backend rodando em `http://localhost:8087` ou defina `EXPO_PUBLIC_API_BASE_URL`
 
 ## Como rodar
 ```bash
@@ -28,6 +28,6 @@ npx expo start --ios
 ```
 
 Variáveis:
-- `EXPO_PUBLIC_API_BASE_URL` (ex.: `http://localhost:8080/api/v1`)
+- `EXPO_PUBLIC_API_BASE_URL` (ex.: `http://localhost:8087/api/v1`)
 
 Use o app para gravar, sincronizar e transcrever reuniões manualmente.

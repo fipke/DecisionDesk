@@ -5,7 +5,7 @@ import * as FileSystem from 'expo-file-system';
 import { MeetingDetailsPayload } from '../types';
 
 const extra = Constants?.expoConfig?.extra as { apiBaseUrl?: string } | undefined;
-const baseURL = (extra?.apiBaseUrl ?? 'http://localhost:8080/api/v1').replace(/\/$/, '');
+const baseURL = (extra?.apiBaseUrl ?? 'http://localhost:8087/api/v1').replace(/\/$/, '');
 
 export const api = axios.create({
   baseURL,

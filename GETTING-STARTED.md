@@ -44,7 +44,7 @@ FX_RATE_USD_TO_BRL=5.50
 ```bash
 cd apps/mobile
 # Create .env if needed
-echo "EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1" > .env
+echo "EXPO_PUBLIC_API_BASE_URL=http://localhost:8087/api/v1" > .env
 ```
 
 ### 3. Start PostgreSQL
@@ -72,14 +72,14 @@ mvn spring-boot:run
 Wait for startup, then test:
 ```bash
 # Health check
-curl http://localhost:8080/api/v1/health
+curl http://localhost:8087/api/v1/health
 
 # Test OpenAI connection
-curl http://localhost:8080/api/v1/debug/openai-test
+curl http://localhost:8087/api/v1/debug/openai-test
 ```
 
-Backend runs at: **http://localhost:8080**  
-OpenAPI docs: **http://localhost:8080/swagger-ui.html**
+Backend runs at: **http://localhost:8087**  
+OpenAPI docs: **http://localhost:8087/swagger-ui.html**
 
 ### 5. Start iOS Mobile App
 From `apps/mobile`:
@@ -98,24 +98,24 @@ Press `i` to open iOS simulator.
 
 1. **Create meeting**:
    ```bash
-   MEETING_ID=$(curl -sX POST http://localhost:8080/api/v1/meetings | jq -r '.id')
+   MEETING_ID=$(curl -sX POST http://localhost:8087/api/v1/meetings | jq -r '.id')
    echo $MEETING_ID
    ```
 
 2. **Upload audio** (replace with your file):
    ```bash
    curl -s -F "file=@/path/to/sample.m4a" \
-     http://localhost:8080/api/v1/meetings/$MEETING_ID/audio | jq
+     http://localhost:8087/api/v1/meetings/$MEETING_ID/audio | jq
    ```
 
 3. **Trigger transcription**:
    ```bash
-   curl -sX POST http://localhost:8080/api/v1/meetings/$MEETING_ID/transcribe | jq
+   curl -sX POST http://localhost:8087/api/v1/meetings/$MEETING_ID/transcribe | jq
    ```
 
 4. **Get transcript & costs**:
    ```bash
-   curl -s http://localhost:8080/api/v1/meetings/$MEETING_ID | jq
+   curl -s http://localhost:8087/api/v1/meetings/$MEETING_ID | jq
    ```
 
 ### iOS app test
@@ -135,13 +135,13 @@ Press `i` to open iOS simulator.
 ### Backend won't start
 - **PostgreSQL not running**: `make db-start` or `podman-compose up -d postgres`
 - **Missing OPENAI_API_KEY**: Check `apps/backend/.env`
-- **Port 8080 in use**: `lsof -ti:8080 | xargs kill -9`
+- **Port 8087 in use**: `lsof -ti:8087 | xargs kill -9`
 - **Port 5435 in use**: `lsof -ti:5435` (kill that process or change port in docker-compose.yml)
 
 ### OpenAI connection fails
 ```bash
 # Test connection
-curl http://localhost:8080/api/v1/debug/openai-test
+curl http://localhost:8087/api/v1/debug/openai-test
 
 # Check logs
 cd apps/backend
@@ -151,7 +151,7 @@ tail -f target/spring-boot.log
 ### Mobile app can't connect to backend
 - **Backend not running**: Start backend first
 - **Wrong URL**: Update `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/.env`
-- **iOS simulator networking**: Use `http://localhost:8080` (not `127.0.0.1`)
+- **iOS simulator networking**: Use `http://localhost:8087` (not `127.0.0.1`)
 
 ### Expo errors after dependency upgrade
 ```bash
