@@ -1,16 +1,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import {
-  useAudioRecorder,
-  AudioModule,
-  RecordingOptions,
-  RecordingStatus,
-  AndroidOutputFormat,
-  AndroidAudioEncoder,
-  IOSOutputFormat,
-  IOSAudioQuality
-} from 'expo-audio';
+import { Audio } from 'expo-av';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Text, View, Platform } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 import * as Network from 'expo-network';
 import { NetworkStateType } from 'expo-network';
 
@@ -23,47 +14,28 @@ import { useSettings } from '../state/SettingsContext';
 export type RecordScreenProps = NativeStackScreenProps<RootStackParamList, 'Record'>;
 
 export function RecordScreen({ navigation }: RecordScreenProps) {
+  const [permissionResponse, requestPermission] = Audio.usePermissions();
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [durationMillis, setDurationMillis] = useState(0);
   const [isPreparing, setIsPreparing] = useState(false);
   const { recordAndQueue, syncPendingOperations } = useMeetings();
   const { ensureAllowedConnection } = useNetworkGuard();
   const { allowCellular } = useSettings();
 
-  const recordingOptions: RecordingOptions = useMemo(
-    () => ({
-      android: {
-        extension: '.m4a',
-        outputFormat: AndroidOutputFormat.MPEG_4,
-        audioEncoder: AndroidAudioEncoder.AAC,
-        sampleRate: 48000,
-        numberOfChannels: 1,
-        bitRate: 96000
-      },
-      ios: {
-        extension: '.m4a',
-        audioQuality: IOSAudioQuality.HIGH,
-        outputFormat: IOSOutputFormat.MPEG4AAC,
-        sampleRate: 48000,
-        numberOfChannels: 1,
-        bitRate: 96000
-      }
-    }),
-    []
-  );
-
-  const recorder = useAudioRecorder(recordingOptions, (status: RecordingStatus) => {
-    if (status.isRecording && status.durationMillis) {
-      setDurationMillis(status.durationMillis);
-    }
-  });
-
   useEffect(() => {
+    let subscription: Audio.RecordingStatusUpdateListener | undefined;
+    if (recording) {
+      subscription = (status) => {
+        if (status.isRecording) {
+          setDurationMillis(status.durationMillis ?? 0);
+        }
+      };
+      recording.setOnRecordingStatusUpdate(subscription);
+    }
     return () => {
-      if (recorder.isRecording) {
-        recorder.stopAsync();
-      }
+      recording?.setOnRecordingStatusUpdate(undefined);
     };
-  }, [recorder]);
+  }, [recording]);
 
   const formattedDuration = useMemo(() => {
     const totalSeconds = Math.floor(durationMillis / 1000);
@@ -73,34 +45,62 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
   }, [durationMillis]);
 
   const startRecording = useCallback(async () => {
-    if (recorder.isRecording) {
+    if (recording) {
       return;
     }
     setIsPreparing(true);
     try {
-      const result = await AudioModule.requestRecordingPermissionsAsync();
-      if (!result.granted) {
-        Alert.alert('Permissão negada', 'Autorize o uso do microfone para gravar suas reuniões.');
-        return;
+      if (!permissionResponse || permissionResponse.status !== 'granted') {
+        const { status } = await requestPermission();
+        if (status !== 'granted') {
+          Alert.alert('Permissão negada', 'Autorize o uso do microfone para gravar suas reuniões.');
+          return;
+        }
       }
 
-      await recorder.prepareToRecordAsync();
-      await recorder.startAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true
+      });
+
+      const recordingObject = new Audio.Recording();
+      await recordingObject.prepareToRecordAsync({
+        android: {
+          extension: '.m4a',
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 48000,
+          numberOfChannels: 1,
+          bitRate: 96000
+        },
+        ios: {
+          extension: '.m4a',
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          sampleRate: 48000,
+          numberOfChannels: 1,
+          bitRate: 96000
+        }
+      });
+      await recordingObject.startAsync();
+      setRecording(recordingObject);
       setDurationMillis(0);
     } catch (error) {
       Alert.alert('Erro ao iniciar', 'Não foi possível iniciar a gravação.');
     } finally {
       setIsPreparing(false);
     }
-  }, [recorder]);
+  }, [permissionResponse, recording, requestPermission]);
 
   const stopRecording = useCallback(async () => {
-    if (!recorder.isRecording) {
+    if (!recording) {
       return;
     }
     setIsPreparing(true);
     try {
-      const uri = await recorder.stopAsync();
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = recording.getURI();
       if (!uri) {
         throw new Error('Gravação indisponível');
       }
@@ -118,18 +118,19 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
     } catch (error) {
       Alert.alert('Erro na gravação', 'Não foi possível salvar a reunião. Tente novamente.');
     } finally {
+      setRecording(null);
       setIsPreparing(false);
       setDurationMillis(0);
     }
-  }, [ensureAllowedConnection, navigation, recordAndQueue, recorder, syncPendingOperations]);
+  }, [ensureAllowedConnection, navigation, recordAndQueue, recording, syncPendingOperations]);
 
   const handlePrimaryAction = useCallback(() => {
-    if (recorder.isRecording) {
+    if (recording) {
       stopRecording();
     } else {
       startRecording();
     }
-  }, [recorder.isRecording, startRecording, stopRecording]);
+  }, [recording, startRecording, stopRecording]);
 
   useEffect(() => {
     Network.getNetworkStateAsync().then((state) => {
@@ -152,10 +153,10 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
         <Text className="text-4xl font-bold text-emerald-400">{formattedDuration}</Text>
       </View>
       <PrimaryButton
-        title={recorder.isRecording ? 'Parar e salvar' : 'Gravar agora'}
+        title={recording ? 'Parar e salvar' : 'Gravar agora'}
         onPress={handlePrimaryAction}
         disabled={isPreparing}
-        variant={recorder.isRecording ? 'danger' : 'primary'}
+        variant={recording ? 'danger' : 'primary'}
       />
       <Text className="mt-6 text-center text-xs text-slate-500">
         Os arquivos são armazenados localmente e enviados assim que houver conexão liberada.

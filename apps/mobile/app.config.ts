@@ -7,7 +7,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'dark',
-  sdkVersion: '52.0.0',
+  sdkVersion: '51.0.0',
   platforms: ['ios'],
   runtimeVersion: {
     policy: 'appVersion'
