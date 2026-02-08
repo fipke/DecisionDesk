@@ -50,7 +50,7 @@ db-clean:
 
 # Backend targets
 backend-run:
-	@echo "Starting backend on http://localhost:8080..."
+	@echo "Starting backend on http://localhost:8087..."
 	cd apps/backend && ./mvnw spring-boot:run
 
 backend-test:
