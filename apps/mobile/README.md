@@ -7,7 +7,13 @@
 - Exibição da transcrição e dos custos retornados pelo backend.
 - Armazenamento local com SQLite + fila de sincronização.
 - Preferência por Wi‑Fi (uso de dados celulares opcional nas configurações).
-
+## Stack (Feb 2026)
+- **Expo SDK 52** (React Native 0.76, React 18.3)
+- **React Navigation 7** (native stack navigator)
+- **NativeWind 4.1** (Tailwind CSS for React Native)
+- **expo-audio** (modern hook-based recording API)
+- **expo-sqlite 15** (async database API)
+- **TypeScript 5.7**
 ## Requisitos
 - Node 18+
 - Expo CLI (`npm install -g expo-cli`)

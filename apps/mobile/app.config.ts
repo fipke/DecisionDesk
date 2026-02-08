@@ -7,8 +7,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'dark',
-  sdkVersion: '50.0.0',
+  sdkVersion: '52.0.0',
   platforms: ['ios'],
+  runtimeVersion: {
+    policy: 'appVersion'
+  },
   scheme: 'decisiondesk',
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8080/api/v1'
@@ -24,10 +27,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     }
   },
   updates: {
-    url: 'https://u.expo.dev/00000000-0000-0000-0000-000000000000'
-  },
-  runtimeVersion: {
-    policy: 'appVersion'
+    enabled: false
   },
   experiments: {
     tsconfigPaths: true
