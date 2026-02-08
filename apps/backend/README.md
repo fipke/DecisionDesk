@@ -19,13 +19,15 @@ This module hosts the Spring Boot API for DecisionDesk. Follow the steps below t
 3. (Optional) Review `config/application.yml.example` for the full Spring configuration (Flyway, storage, multipart limits).
 
 ## Running the API
-1. From the repository root start PostgreSQL:
+1. From the repository root start PostgreSQL (port 5435):
    ```bash
    podman-compose up postgres
+   # Or: make db-start
    ```
 2. In a new terminal, launch the Spring Boot application from `apps/backend`:
    ```bash
    mvn spring-boot:run
+   # Or from root: make backend-run
    ```
    Flyway will apply `db/migration/V1__baseline.sql` on startup.
 3. Once the service is running, exercise the API:

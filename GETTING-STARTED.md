@@ -14,6 +14,8 @@ This guide walks you through starting the entire DecisionDesk stack from scratch
 
 ## Quick Start (5 steps)
 
+> **💡 Tip**: Use `make setup` for automated setup, or run `make help` to see all available commands.
+
 ### 1. Clone & Navigate
 ```bash
 git clone <your-repo>
@@ -48,14 +50,19 @@ echo "EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1" > .env
 ### 3. Start PostgreSQL
 From repository root:
 ```bash
-docker compose up -d postgres
+podman-compose up -d postgres
+# Or simply: make db-start
 ```
 
 Verify it's running:
 ```bash
-docker compose ps
+podman-compose ps
+# Or: make db-logs
 ```
 
+> PostgreSQL runs on **port 5435** to avoid conflicts with other local instances.
+
+# Or from root: make backend-run
 ### 4. Start Backend API
 From `apps/backend`:
 ```bash
@@ -126,9 +133,10 @@ Press `i` to open iOS simulator.
 ## Troubleshooting
 
 ### Backend won't start
-- **PostgreSQL not running**: `podman-compose up -d postgres`
+- **PostgreSQL not running**: `make db-start` or `podman-compose up -d postgres`
 - **Missing OPENAI_API_KEY**: Check `apps/backend/.env`
 - **Port 8080 in use**: `lsof -ti:8080 | xargs kill -9`
+- **Port 5435 in use**: `lsof -ti:5435` (kill that process or change port in docker-compose.yml)
 
 ### OpenAI connection fails
 ```bash
@@ -201,6 +209,7 @@ npx expo start -c
 
 # Stop PostgreSQL
 podman-compose down
+# Or: make db-stop
 
 # Stop Expo (Ctrl+C in terminal)
 ```
