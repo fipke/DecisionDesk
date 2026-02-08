@@ -1,0 +1,3 @@
+# ENV Deltas
+AUTO_TRANSCRIBE_ON_UPLOAD=false
+TRANSCRIBE_PROVIDER=remote_openai

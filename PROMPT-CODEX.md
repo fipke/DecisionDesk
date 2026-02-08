@@ -1,27 +1,37 @@
-# DecisionDesk — Codex Master Prompt (MVP-first, Full)
+# DecisionDesk — Codex Master Prompt (Docs v6, 2025-09-28)
 
-Act as a senior architect. Use the seed docs for full context. Generate code in **small PRs** only.
+**Role**: Senior architect. Implement in **small PRs** only.
 
-## Read these first
+## Core rules
+- Clients (iOS/macOS/Web) **NEVER call OpenAI**; backend owns Whisper/GPT, pricing, and budgeting.
+- **Upload does not auto-transcribe**. Transcription must be triggered manually:
+  - `POST /api/v1/meetings/{id}/transcribe` (cloud/server-local)
+  - or **desktop-local** via queue (Mac accepts jobs and posts transcript back)
+- Pluggable providers: `remote_openai`, `server_local`, `desktop_local`.
+- Spring Boot 4 / Spring Framework 7 with **API versioning**; Java 21.
+- MVP: polling only (no WS), no multitenancy, no chunked upload.
+- Document public code (Javadoc/JSDoc). Conventional Commits + changeset per PR.
+
+## Read before coding
 - docs/SCOPE.md
 - docs/ROADMAP.md
 - docs/API-SURFACE.md
-- docs/DOMAIN-MODEL.md
+- docs/DB-SCHEMA.md
+- docs/DB-SCHEMA-LOCAL.md
+- docs/ENV.md
+- docs/ERRORS.md
+- docs/SECURITY.md
+- docs/LOCAL-TRANSCRIBE.md
+- docs/QUEUE.md
 
-## Core rules
-- MVP-first: iOS record → single upload → **backend** transcribes (Whisper) → show **server-computed costs**.
-- Clients MUST NEVER call OpenAI directly. All Whisper/GPT calls happen in the backend.
-- Spring Boot 4 / Spring 7 with API versioning. Choose compatible versions yourself.
-- Document public code (Javadoc/JSDoc). Conventional Commits + changeset per PR.
-- No duplicate utilities—use packages/utils.
+## Additional specs / deltas
+- docs/specs/PR02-PATCH.md
+- docs/specs/PR03-SPEC.md
+- docs/specs/PR04-SPEC.md
+- docs/specs/PR05-SPEC.md
+- docs/specs/PR06-SPEC.md
+- docs/addenda/API-SURFACE-DELTA.md
+- docs/addenda/ENV-DELTA.md
+- docs/addenda/CURL-RECIPES.md
 
-## Deliver PRs exactly as ROADMAP
-PR 01 — Backend bootstrap + Health + API key + costs base  
-PR 02 — Single upload + synchronous transcription + GET status/costs  
-PR 03 — iOS v1 (record → upload → see transcript/cost)  
-PR 04 — Basic GPT summary (one default prompt)  
-PR 05 — macOS v1  
-PR 06 — Web v1  
-PR 07 — (post-MVP) Chunked upload, Queues, WebSockets, Presets, Importers, Budgeting
-
-Say “context loaded” then generate **only PR 01** when asked.
+When prompted, say “context loaded”, then execute only the requested PR/spec.

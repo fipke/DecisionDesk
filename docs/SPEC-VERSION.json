@@ -1,0 +1,8 @@
+{
+  "version": "v7",
+  "updated": "2025-09-29",
+  "authoritative": [
+    "docs/SPEC-MASTER.md",
+    "docs/SPEC-LOADLIST.md"
+  ]
+}
