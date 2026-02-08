@@ -6,7 +6,7 @@ This guide walks you through starting the entire DecisionDesk stack from scratch
 
 - **Java 21** (for backend)
 - **Maven 3.9+** (or use `./mvnw`)
-- **Docker & Docker Compose** (for PostgreSQL)
+- **Podman** (for PostgreSQL)
 - **Node.js 18+** (for mobile app)
 - **Expo CLI** (`npm install -g expo-cli`)
 - **Xcode** (for iOS simulator)
@@ -126,7 +126,7 @@ Press `i` to open iOS simulator.
 ## Troubleshooting
 
 ### Backend won't start
-- **PostgreSQL not running**: `docker compose up -d postgres`
+- **PostgreSQL not running**: `podman-compose up -d postgres`
 - **Missing OPENAI_API_KEY**: Check `apps/backend/.env`
 - **Port 8080 in use**: `lsof -ti:8080 | xargs kill -9`
 
@@ -200,7 +200,7 @@ npx expo start -c
 # Stop backend (Ctrl+C in terminal)
 
 # Stop PostgreSQL
-docker compose down
+podman-compose down
 
 # Stop Expo (Ctrl+C in terminal)
 ```

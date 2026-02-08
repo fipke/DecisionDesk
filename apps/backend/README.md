@@ -5,7 +5,7 @@ This module hosts the Spring Boot API for DecisionDesk. Follow the steps below t
 ## Prerequisites
 - **Java 21** (matching the `java.version` in `pom.xml`).
 - **Maven 3.9+** or use the provided Maven Wrapper (`./mvnw`).
-- **Docker** for running the local PostgreSQL instance (`docker compose`).
+- **Podman** for running the local PostgreSQL instance (`podman-compose`).
 
 ## Setup
 1. Copy the sample environment file:
@@ -21,7 +21,7 @@ This module hosts the Spring Boot API for DecisionDesk. Follow the steps below t
 ## Running the API
 1. From the repository root start PostgreSQL:
    ```bash
-   docker compose up postgres
+   podman-compose up postgres
    ```
 2. In a new terminal, launch the Spring Boot application from `apps/backend`:
    ```bash

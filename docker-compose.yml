@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: decisiondesk
       POSTGRES_PASSWORD: decisiondesk
       POSTGRES_DB: decisiondesk
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
 volumes:
   pgdata:
