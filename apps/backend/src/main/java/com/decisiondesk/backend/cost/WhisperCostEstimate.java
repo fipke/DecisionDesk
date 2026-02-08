@@ -7,6 +7,7 @@ import java.math.BigDecimal;
  *
  * @param minutesBilled total whole and fractional minutes priced
  * @param usdCost total Whisper cost in USD
+ * @param brlCost total Whisper cost converted to BRL
  */
-public record WhisperCostEstimate(BigDecimal minutesBilled, BigDecimal usdCost) {
+public record WhisperCostEstimate(BigDecimal minutesBilled, BigDecimal usdCost, BigDecimal brlCost) {
 }

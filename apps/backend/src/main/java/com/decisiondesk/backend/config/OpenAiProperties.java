@@ -7,4 +7,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "openai")
 public record OpenAiProperties(String apiKey) {
+
+    public OpenAiProperties {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException("openai.api-key must be provided");
+        }
+    }
 }
