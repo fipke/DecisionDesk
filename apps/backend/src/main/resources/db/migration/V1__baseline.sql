@@ -1,0 +1,5 @@
+create table if not exists meetings (id uuid primary key, created_at timestamptz not null default now(), status text not null default 'NEW' check (status in ('NEW','PROCESSING','DONE','ERROR')));
+create table if not exists audio_assets (id uuid primary key, meeting_id uuid references meetings(id), path text not null, codec text, sample_rate int, size_bytes bigint, duration_sec int, created_at timestamptz default now());
+create table if not exists transcripts (id uuid primary key, meeting_id uuid unique references meetings(id), language text not null default 'pt', text text not null, created_at timestamptz default now());
+create table if not exists summaries (id uuid primary key, meeting_id uuid unique references meetings(id), text_md text not null, created_at timestamptz default now());
+create table if not exists usage_records (id uuid primary key, meeting_id uuid references meetings(id), service text not null check (service in ('WHISPER','GPT')), units numeric not null, usd numeric not null, brl numeric not null, meta jsonb, created_at timestamptz default now());

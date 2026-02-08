@@ -1,0 +1,37 @@
+server:
+  port: 8080
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${POSTGRES_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    community-db-support-enabled: true
+  servlet:
+    multipart:
+      max-file-size: ${MAX_UPLOAD_MB:200}MB
+      max-request-size: ${MAX_UPLOAD_MB:200}MB
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+openai:
+  api-key: ${OPENAI_API_KEY:}
+storage:
+  audio-root: ${AUDIO_STORAGE_ROOT:var/storage/audio}
+app:
+  version: ${APP_VERSION:0.1.0-SNAPSHOT}
+  upload:
+    maxMb: ${MAX_UPLOAD_MB:200}
+  ai:
+    defaultLanguage: ${DEFAULT_LANGUAGE:pt}
+costs:
+  whisperPricePerMinUsd: ${WHISPER_PRICE_PER_MIN_USD:0.006}
+  gptPricePer1kPromptUsd: ${GPT_PRICE_PER_1K_PROMPT_USD:0.005}
+  gptPricePer1kCompletionUsd: ${GPT_PRICE_PER_1K_COMPLETION_USD:0.015}
+  fxUsdBrl: ${FX_USD_BRL:5.0}
