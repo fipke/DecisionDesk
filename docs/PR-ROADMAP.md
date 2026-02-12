@@ -25,7 +25,7 @@
 ## Fase 1: Backend
 
 ### PR07 - Organização: Pastas, Tipos, Tags ✅
-**Status:** Backend completo, precisa fix de migration
+**Status:** ✅ Completo
 
 **Entregáveis:**
 - [x] V2 migration (folders, meeting_types, meetings alterations)
@@ -41,8 +41,8 @@
 
 ---
 
-### PR08 - Pessoas (Participantes + Menções)
-**Status:** Pendente
+### PR08 - Pessoas (Participantes + Menções) ✅
+**Status:** ✅ Completo
 
 **Conceito:**
 - Tabela `people` (não `participants`) - podem ser participantes da reunião OU pessoas mencionadas
@@ -54,11 +54,11 @@
 - Clique na referência abre modal para editar detalhes (nome completo, email, notas)
 
 **Entregáveis:**
-- [ ] V3 migration (people table, meeting_people junction com tipo: participant/mentioned)
-- [ ] Person entity + repository + service + controller
-- [ ] Endpoint de busca com autocomplete (`GET /api/v1/people/search?q=Rod`)
-- [ ] Junction table com `role`: 'participant' | 'mentioned'
-- [ ] Mobile SQLite people table + sync
+- [x] V3 migration (people table, meeting_people junction com tipo: participant/mentioned)
+- [x] Person entity + repository + service + controller
+- [x] Endpoint de busca com autocomplete (`GET /api/v1/people/search?q=Rod`)
+- [x] Junction table com `role`: 'participant' | 'mentioned'
+- [x] Mobile SQLite people table + sync
 
 **Endpoints:**
 - `GET /api/v1/people/search?q={query}` - autocomplete
