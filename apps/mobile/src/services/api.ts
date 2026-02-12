@@ -1,8 +1,15 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
-import * as FileSystem from 'expo-file-system';
+import { fetch } from 'expo/fetch';
+import { File } from 'expo-file-system';
 
-import { MeetingDetailsPayload } from '../types';
+import { MeetingDetailsPayload, TranscriptionProvider, WhisperModel } from '../types';
+
+export interface TranscribeRequestOptions {
+  provider: TranscriptionProvider;
+  model?: WhisperModel;
+  enableDiarization?: boolean;
+}
 
 const extra = Constants?.expoConfig?.extra as { apiBaseUrl?: string } | undefined;
 const baseURL = (extra?.apiBaseUrl ?? 'http://localhost:8087/api/v1').replace(/\/$/, '');
@@ -38,21 +45,34 @@ export async function createMeeting(): Promise<CreateMeetingResponse> {
 
 export async function uploadAudio(meetingId: string, fileUri: string): Promise<UploadAudioResponse> {
   const uploadUrl = `${baseURL}/meetings/${meetingId}/audio`;
-  const result = await FileSystem.uploadAsync(uploadUrl, fileUri, {
-    httpMethod: 'POST',
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-    fieldName: 'file',
-    mimeType: 'audio/m4a',
+  const file = new File(fileUri);
+  const formData = new FormData();
+  formData.append('file', file as any);
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: formData,
     headers: {
       Accept: 'application/json'
     }
   });
 
-  return JSON.parse(result.body) as UploadAudioResponse;
+  if (!response.ok) {
+    throw new Error(`Upload failed with status ${response.status}`);
+  }
+
+  return await response.json() as UploadAudioResponse;
 }
 
-export async function triggerTranscription(meetingId: string): Promise<TranscribeResponse> {
-  const { data } = await api.post<TranscribeResponse>(`/meetings/${meetingId}/transcribe`);
+export async function triggerTranscription(
+  meetingId: string,
+  options: TranscribeRequestOptions
+): Promise<TranscribeResponse> {
+  const { data } = await api.post<TranscribeResponse>(`/meetings/${meetingId}/transcribe`, {
+    provider: options.provider,
+    model: options.model,
+    enableDiarization: options.enableDiarization
+  });
   return data;
 }
 

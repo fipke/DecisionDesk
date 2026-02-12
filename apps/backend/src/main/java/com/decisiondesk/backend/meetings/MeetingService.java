@@ -130,6 +130,18 @@ public class MeetingService {
         return transcriptionService.transcribe(meetingId);
     }
 
+    /**
+     * Triggers transcription of the latest audio asset with specified options.
+     *
+     * @param meetingId identifier of the meeting to process
+     * @param options   transcription options (provider, model, diarization)
+     * @return resulting meeting status
+     */
+    @Transactional
+    public MeetingStatus transcribeMeeting(UUID meetingId, TranscriptionOptions options) {
+        return transcriptionService.transcribe(meetingId, options);
+    }
+
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Audio file is required");

@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -15,6 +16,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.decisiondesk.backend.meetings.MeetingService;
 import com.decisiondesk.backend.meetings.MeetingStatus;
+import com.decisiondesk.backend.meetings.TranscriptionOptions;
+import com.decisiondesk.backend.meetings.TranscriptionProvider;
+import com.decisiondesk.backend.meetings.WhisperModel;
 import com.decisiondesk.backend.meetings.model.AudioUploadResult;
 import com.decisiondesk.backend.meetings.model.Meeting;
 import com.decisiondesk.backend.meetings.model.MeetingCostBreakdown;
@@ -60,10 +64,26 @@ public class MeetingsController {
     @PostMapping(path = "/{meetingId}/transcribe")
     @Operation(
             summary = "Transcribe stored meeting audio",
-            description = "Runs Whisper against the latest uploaded audio asset and returns the meeting status once processing completes.")
-    @ApiResponse(responseCode = "200", description = "Transcription complete", content = @Content(schema = @Schema(implementation = TranscribeResponse.class)))
-    public TranscribeResponse transcribe(@PathVariable UUID meetingId) {
-        MeetingStatus status = meetingService.transcribeMeeting(meetingId);
+            description = "Runs transcription against the latest uploaded audio asset. Supports multiple providers: remote_openai (cloud), server_local (VPS whisper.cpp), desktop_local (Mac queue).")
+    @ApiResponse(responseCode = "200", description = "Transcription complete or queued", content = @Content(schema = @Schema(implementation = TranscribeResponse.class)))
+    public TranscribeResponse transcribe(
+            @PathVariable UUID meetingId,
+            @RequestBody(required = false) TranscribeRequest request) {
+        
+        if (request == null) {
+            MeetingStatus status = meetingService.transcribeMeeting(meetingId);
+            return new TranscribeResponse(meetingId, status);
+        }
+
+        TranscriptionProvider provider = TranscriptionProvider.fromValue(request.providerOrDefault());
+        WhisperModel model = WhisperModel.fromValue(request.modelOrDefault());
+        TranscriptionOptions options = new TranscriptionOptions(
+                provider,
+                model,
+                request.enableDiarizationOrDefault()
+        );
+
+        MeetingStatus status = meetingService.transcribeMeeting(meetingId, options);
         return new TranscribeResponse(meetingId, status);
     }
 

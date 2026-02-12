@@ -35,3 +35,17 @@ costs:
   gptPricePer1kPromptUsd: ${GPT_PRICE_PER_1K_PROMPT_USD:0.005}
   gptPricePer1kCompletionUsd: ${GPT_PRICE_PER_1K_COMPLETION_USD:0.015}
   fxUsdBrl: ${FX_USD_BRL:5.0}
+
+# Transcription provider configuration
+transcription:
+  # Local whisper.cpp on server (server_local provider)
+  local:
+    enabled: ${TRANSCRIPTION_LOCAL_ENABLED:false}
+    whisper-path: ${WHISPER_PATH:/usr/local/bin/whisper}
+    models-path: ${WHISPER_MODELS_PATH:/opt/whisper/models}
+    timeout-minutes: ${WHISPER_TIMEOUT_MINUTES:30}
+  
+  # Desktop queue for Mac app (desktop_local provider)
+  desktop:
+    enabled: ${TRANSCRIPTION_DESKTOP_ENABLED:true}
+

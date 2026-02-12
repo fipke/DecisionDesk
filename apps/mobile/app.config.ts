@@ -7,7 +7,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'dark',
-  sdkVersion: '51.0.0',
+  sdkVersion: '54.0.0',
   platforms: ['ios'],
   runtimeVersion: {
     policy: 'appVersion'
@@ -19,12 +19,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.decisiondesk.mobile',
+    newArchEnabled: true,
     infoPlist: {
       NSMicrophoneUsageDescription: 'Precisamos acessar o microfone para gravar suas reuniões.',
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true
       }
     }
+  },
+  android: {
+    package: 'com.decisiondesk.mobile',
+    newArchEnabled: true
   },
   updates: {
     enabled: false

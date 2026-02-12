@@ -8,14 +8,15 @@
 - Armazenamento local com SQLite + fila de sincronização.
 - Preferência por Wi‑Fi (uso de dados celulares opcional nas configurações).
 ## Stack (Feb 2026)
-- **Expo SDK 51** (React Native 0.74, React 18.2)
-- **React Navigation 6** (native stack navigator)
+- **Expo SDK 54** (React Native 0.81, React 19.1) — Latest stable
+- **React Navigation 7** (native stack navigator)
 - **NativeWind 4.1** (Tailwind CSS for React Native)
-- **expo-av** (audio recording API)
-- **expo-sqlite 14** (async database API)
-- **TypeScript 5.3**
+- **expo-av 15** (audio recording API)
+- **expo-sqlite 15** (async database API)
+- **TypeScript 5.9**
+- **New Architecture enabled** (required for future SDKs)
 ## Requisitos
-- Node 18+
+- Node 20.19.4+
 - Expo CLI (`npm install -g expo-cli`)
 - Xcode (para rodar no simulador iOS)
 - Backend rodando em `http://localhost:8087` ou defina `EXPO_PUBLIC_API_BASE_URL`

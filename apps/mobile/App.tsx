@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import './global.css';
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';

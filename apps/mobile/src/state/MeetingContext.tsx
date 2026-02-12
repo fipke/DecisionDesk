@@ -1,5 +1,5 @@
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 
 import { loadMeetingDetails, requestTranscription, syncRecordingWithBackend } from '../services/meetingService';
@@ -13,7 +13,13 @@ import {
   removeOperation,
   upsertMeeting
 } from '../storage/database';
-import { Meeting } from '../types';
+import { Meeting, TranscriptionProvider, WhisperModel } from '../types';
+
+export interface TranscribeOptions {
+  provider: TranscriptionProvider;
+  model?: WhisperModel;
+  enableDiarization?: boolean;
+}
 
 interface MeetingContextValue {
   meetings: Meeting[];
@@ -21,16 +27,15 @@ interface MeetingContextValue {
   recordAndQueue: (fileUri: string) => Promise<string>;
   refreshMeeting: (id: string) => Promise<void>;
   syncPendingOperations: () => Promise<void>;
-  transcribeMeeting: (id: string) => Promise<void>;
+  transcribeMeeting: (id: string, options: TranscribeOptions) => Promise<void>;
 }
 
 const MeetingContext = createContext<MeetingContextValue | undefined>(undefined);
 
 async function ensureRecordingLibrary() {
-  const recordingsDir = `${FileSystem.documentDirectory}recordings`;
-  const info = await FileSystem.getInfoAsync(recordingsDir);
-  if (!info.exists) {
-    await FileSystem.makeDirectoryAsync(recordingsDir, { intermediates: true });
+  const recordingsDir = new Directory(Paths.document, 'recordings');
+  if (!recordingsDir.exists) {
+    recordingsDir.create({ intermediates: true });
   }
   return recordingsDir;
 }
@@ -52,8 +57,10 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   const recordAndQueue = useCallback(async (fileUri: string) => {
     const id = Crypto.randomUUID();
     const recordingsDir = await ensureRecordingLibrary();
-    const targetUri = `${recordingsDir}/${id}.m4a`;
-    await FileSystem.copyAsync({ from: fileUri, to: targetUri });
+    const targetFile = new File(recordingsDir, `${id}.m4a`);
+    const sourceFile = new File(fileUri);
+    sourceFile.copy(targetFile);
+    const targetUri = targetFile.uri;
 
     const meeting: Meeting = {
       id,
@@ -131,7 +138,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   }, [loadFromDatabase]);
 
   const transcribeMeeting = useCallback(
-    async (id: string) => {
+    async (id: string, options: TranscribeOptions) => {
       const meeting = await getMeeting(id);
       if (!meeting?.remoteId) {
         throw new Error('A gravação precisa ser sincronizada antes de transcrever.');
@@ -142,7 +149,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         prev.map((item) => (item.id === id ? { ...item, status: 'PROCESSING' } : item))
       );
 
-      const response = await requestTranscription(meeting.remoteId);
+      const response = await requestTranscription(meeting.remoteId, options);
       await patchMeeting(id, { status: response.status });
       await refreshMeeting(id);
     },

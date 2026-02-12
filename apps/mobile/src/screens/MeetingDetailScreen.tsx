@@ -5,17 +5,21 @@ import { Alert, ScrollView, Text, View } from 'react-native';
 
 import { PrimaryButton } from '../components/PrimaryButton';
 import { StatusBadge } from '../components/StatusBadge';
+import { TranscribeModal, TranscribeModalOptions } from '../components/TranscribeModal';
 import { useNetworkGuard } from '../hooks/useNetworkGuard';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useMeetings } from '../state/MeetingContext';
+import { useSettings } from '../state/SettingsContext';
 import { formatCurrency } from '../utils/format';
 
 export type MeetingDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'MeetingDetail'>;
 
 export function MeetingDetailScreen({ route }: MeetingDetailScreenProps) {
   const { meetings, refreshMeeting, transcribeMeeting } = useMeetings();
+  const { transcription } = useSettings();
   const { ensureAllowedConnection } = useNetworkGuard();
   const [loading, setLoading] = useState(false);
+  const [showTranscribeModal, setShowTranscribeModal] = useState(false);
   const meeting = useMemo(() => meetings.find((item) => item.id === route.params.id), [meetings, route.params.id]);
 
   useFocusEffect(
@@ -36,21 +40,37 @@ export function MeetingDetailScreen({ route }: MeetingDetailScreenProps) {
 
   const canTranscribe = Boolean(meeting.remoteId) && meeting.status !== 'PROCESSING';
 
-  const handleTranscribe = async () => {
+  const handleTranscribePress = () => {
     if (!meeting.remoteId) {
       Alert.alert('Aguardando envio', 'Sincronize a gravação antes de solicitar a transcrição.');
       return;
     }
+    setShowTranscribeModal(true);
+  };
+
+  const handleTranscribe = async (options: TranscribeModalOptions) => {
+    setShowTranscribeModal(false);
+    
     try {
       await ensureAllowedConnection();
-    } catch (error) {
+    } catch {
       return;
     }
+    
     try {
       setLoading(true);
-      await transcribeMeeting(meeting.id);
-      Alert.alert('Pedido enviado', 'A transcrição foi iniciada. Atualize para acompanhar o status.');
-    } catch (error) {
+      await transcribeMeeting(meeting.id, {
+        provider: options.provider,
+        model: options.model,
+        enableDiarization: options.enableDiarization
+      });
+      
+      const message = options.provider === 'desktop_local'
+        ? 'O áudio foi enviado para a fila do Mac Desktop. Abra o app desktop para processar.'
+        : 'A transcrição foi iniciada. Atualize para acompanhar o status.';
+      
+      Alert.alert('Pedido enviado', message);
+    } catch {
       Alert.alert('Erro', 'Não foi possível solicitar a transcrição agora.');
     } finally {
       setLoading(false);
@@ -80,9 +100,17 @@ export function MeetingDetailScreen({ route }: MeetingDetailScreenProps) {
 
       <PrimaryButton
         title="Transcrever agora"
-        onPress={handleTranscribe}
+        onPress={handleTranscribePress}
         disabled={!canTranscribe || loading}
       />
+
+      {/* Provider indicator */}
+      <View className="mt-2 px-1">
+        <Text className="text-center text-xs text-slate-500">
+          Padrão: {transcription.defaultProvider === 'desktop_local' ? 'Mac Local' : 'OpenAI Cloud'}
+          {transcription.defaultProvider === 'desktop_local' && ` (${transcription.defaultModel})`}
+        </Text>
+      </View>
 
       <View className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-4">
         <Text className="text-sm font-semibold text-slate-200">Transcrição</Text>
@@ -94,6 +122,15 @@ export function MeetingDetailScreen({ route }: MeetingDetailScreenProps) {
           </Text>
         )}
       </View>
+
+      <TranscribeModal
+        visible={showTranscribeModal}
+        defaultProvider={transcription.defaultProvider}
+        defaultModel={transcription.defaultModel}
+        defaultDiarization={transcription.enableDiarization}
+        onConfirm={handleTranscribe}
+        onCancel={() => setShowTranscribeModal(false)}
+      />
     </ScrollView>
   );
 }

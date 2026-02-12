@@ -1,4 +1,4 @@
-import { fetchMeetingDetails, triggerTranscription, uploadAudio, createMeeting } from './api';
+import { fetchMeetingDetails, triggerTranscription, uploadAudio, createMeeting, TranscribeRequestOptions } from './api';
 import { Meeting } from '../types';
 
 export async function syncRecordingWithBackend(meeting: Meeting) {
@@ -16,8 +16,8 @@ export async function syncRecordingWithBackend(meeting: Meeting) {
   };
 }
 
-export async function requestTranscription(remoteId: string) {
-  return triggerTranscription(remoteId);
+export async function requestTranscription(remoteId: string, options: TranscribeRequestOptions) {
+  return triggerTranscription(remoteId, options);
 }
 
 export async function loadMeetingDetails(remoteId: string) {

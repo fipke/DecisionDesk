@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import { Meeting, SyncOperation } from '../types';
+import { Folder, Meeting, MeetingType, SyncOperation } from '../types';
 
 const dbPromise = SQLite.openDatabaseAsync('decisiondesk.db');
 
@@ -14,13 +14,42 @@ const MEETINGS_COLUMNS = `
   language TEXT,
   cost_usd REAL,
   cost_brl REAL,
-  minutes REAL
+  minutes REAL,
+  folder_id TEXT,
+  meeting_type_id TEXT,
+  tags TEXT,
+  title TEXT,
+  updated_at TEXT
+`;
+
+const FOLDERS_COLUMNS = `
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  path TEXT NOT NULL UNIQUE,
+  parent_id TEXT,
+  default_tags TEXT,
+  default_whisper_model TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced INTEGER DEFAULT 0
+`;
+
+const MEETING_TYPES_COLUMNS = `
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  required_tags TEXT,
+  default_whisper_model TEXT,
+  created_at TEXT NOT NULL,
+  synced INTEGER DEFAULT 0
 `;
 
 export async function initializeDatabase() {
   const db = await dbPromise;
   await db.execAsync('PRAGMA journal_mode = WAL;');
   await db.execAsync(`CREATE TABLE IF NOT EXISTS meetings (${MEETINGS_COLUMNS});`);
+  await db.execAsync(`CREATE TABLE IF NOT EXISTS folders (${FOLDERS_COLUMNS});`);
+  await db.execAsync(`CREATE TABLE IF NOT EXISTS meeting_types (${MEETING_TYPES_COLUMNS});`);
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS sync_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,12 +58,21 @@ export async function initializeDatabase() {
       created_at INTEGER NOT NULL
     );
   `);
+  
+  // Insert default root folder if not exists
+  await db.runAsync(`
+    INSERT OR IGNORE INTO folders (id, name, path, parent_id, default_tags, created_at, updated_at, synced)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'Raiz', '/', NULL, '{}', datetime('now'), datetime('now'), 1)
+  `);
 }
 
 export async function listMeetings(): Promise<Meeting[]> {
   const db = await dbPromise;
-  const rows = await db.getAllAsync<Meeting & { remote_id: string | null; recording_uri: string | null }>(
-    'SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes FROM meetings ORDER BY datetime(created_at) DESC'
+  const rows = await db.getAllAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
+    `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, 
+     transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
+     folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     FROM meetings ORDER BY datetime(created_at) DESC`
   );
   return rows.map((row) => ({
     ...row,
@@ -44,14 +82,48 @@ export async function listMeetings(): Promise<Meeting[]> {
     language: row.language ?? null,
     costUsd: row.costUsd ?? null,
     costBrl: row.costBrl ?? null,
-    minutes: row.minutes ?? null
+    minutes: row.minutes ?? null,
+    folderId: row.folderId ?? null,
+    meetingTypeId: row.meetingTypeId ?? null,
+    tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
+    title: row.title ?? null,
+    updatedAt: row.updatedAt ?? null
+  }));
+}
+
+export async function listMeetingsByFolder(folderId: string): Promise<Meeting[]> {
+  const db = await dbPromise;
+  const rows = await db.getAllAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
+    `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, 
+     transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
+     folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     FROM meetings WHERE folder_id = ? ORDER BY datetime(created_at) DESC`,
+    [folderId]
+  );
+  return rows.map((row) => ({
+    ...row,
+    remoteId: row.remoteId ?? null,
+    recordingUri: row.recordingUri ?? null,
+    transcriptText: row.transcriptText ?? null,
+    language: row.language ?? null,
+    costUsd: row.costUsd ?? null,
+    costBrl: row.costBrl ?? null,
+    minutes: row.minutes ?? null,
+    folderId: row.folderId ?? null,
+    meetingTypeId: row.meetingTypeId ?? null,
+    tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
+    title: row.title ?? null,
+    updatedAt: row.updatedAt ?? null
   }));
 }
 
 export async function getMeeting(id: string): Promise<Meeting | null> {
   const db = await dbPromise;
-  const row = await db.getFirstAsync<Meeting & { remote_id: string | null; recording_uri: string | null }>(
-    'SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes FROM meetings WHERE id = ? LIMIT 1',
+  const row = await db.getFirstAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
+    `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, 
+     transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
+     folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     FROM meetings WHERE id = ? LIMIT 1`,
     [id]
   );
   if (!row) {
@@ -65,15 +137,20 @@ export async function getMeeting(id: string): Promise<Meeting | null> {
     language: row.language ?? null,
     costUsd: row.costUsd ?? null,
     costBrl: row.costBrl ?? null,
-    minutes: row.minutes ?? null
+    minutes: row.minutes ?? null,
+    folderId: row.folderId ?? null,
+    meetingTypeId: row.meetingTypeId ?? null,
+    tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
+    title: row.title ?? null,
+    updatedAt: row.updatedAt ?? null
   };
 }
 
 export async function upsertMeeting(meeting: Meeting) {
   const db = await dbPromise;
   await db.runAsync(
-    `INSERT INTO meetings (id, remote_id, created_at, status, recording_uri, transcript_text, language, cost_usd, cost_brl, minutes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO meetings (id, remote_id, created_at, status, recording_uri, transcript_text, language, cost_usd, cost_brl, minutes, folder_id, meeting_type_id, tags, title, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        remote_id = excluded.remote_id,
        created_at = excluded.created_at,
@@ -83,7 +160,12 @@ export async function upsertMeeting(meeting: Meeting) {
        language = excluded.language,
        cost_usd = excluded.cost_usd,
        cost_brl = excluded.cost_brl,
-       minutes = excluded.minutes;
+       minutes = excluded.minutes,
+       folder_id = excluded.folder_id,
+       meeting_type_id = excluded.meeting_type_id,
+       tags = excluded.tags,
+       title = excluded.title,
+       updated_at = excluded.updated_at;
     `,
     [
       meeting.id,
@@ -95,7 +177,12 @@ export async function upsertMeeting(meeting: Meeting) {
       meeting.language ?? null,
       meeting.costUsd ?? null,
       meeting.costBrl ?? null,
-      meeting.minutes ?? null
+      meeting.minutes ?? null,
+      meeting.folderId ?? null,
+      meeting.meetingTypeId ?? null,
+      meeting.tags ? JSON.stringify(meeting.tags) : '{}',
+      meeting.title ?? null,
+      meeting.updatedAt ?? new Date().toISOString()
     ]
   );
 }
@@ -132,4 +219,174 @@ export async function listPendingOperations(): Promise<SyncOperation[]> {
 export async function removeOperation(id: number) {
   const db = await dbPromise;
   await db.runAsync('DELETE FROM sync_queue WHERE id = ?;', [id]);
+}
+
+// ============ Folder Operations ============
+
+export async function listFolders(): Promise<Folder[]> {
+  const db = await dbPromise;
+  const rows = await db.getAllAsync<{
+    id: string;
+    name: string;
+    path: string;
+    parent_id: string | null;
+    default_tags: string;
+    default_whisper_model: string | null;
+    created_at: string;
+    updated_at: string;
+    synced: number;
+  }>('SELECT * FROM folders ORDER BY path');
+  
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    parentId: row.parent_id,
+    defaultTags: row.default_tags ? JSON.parse(row.default_tags) : {},
+    defaultWhisperModel: row.default_whisper_model,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    synced: row.synced === 1
+  }));
+}
+
+export async function getFolder(id: string): Promise<Folder | null> {
+  const db = await dbPromise;
+  const row = await db.getFirstAsync<{
+    id: string;
+    name: string;
+    path: string;
+    parent_id: string | null;
+    default_tags: string;
+    default_whisper_model: string | null;
+    created_at: string;
+    updated_at: string;
+    synced: number;
+  }>('SELECT * FROM folders WHERE id = ? LIMIT 1', [id]);
+  
+  if (!row) return null;
+  
+  return {
+    id: row.id,
+    name: row.name,
+    path: row.path,
+    parentId: row.parent_id,
+    defaultTags: row.default_tags ? JSON.parse(row.default_tags) : {},
+    defaultWhisperModel: row.default_whisper_model,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    synced: row.synced === 1
+  };
+}
+
+export async function upsertFolder(folder: Folder) {
+  const db = await dbPromise;
+  await db.runAsync(
+    `INSERT INTO folders (id, name, path, parent_id, default_tags, default_whisper_model, created_at, updated_at, synced)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       path = excluded.path,
+       parent_id = excluded.parent_id,
+       default_tags = excluded.default_tags,
+       default_whisper_model = excluded.default_whisper_model,
+       updated_at = excluded.updated_at,
+       synced = excluded.synced;
+    `,
+    [
+      folder.id,
+      folder.name,
+      folder.path,
+      folder.parentId ?? null,
+      JSON.stringify(folder.defaultTags ?? {}),
+      folder.defaultWhisperModel ?? null,
+      folder.createdAt,
+      folder.updatedAt,
+      folder.synced ? 1 : 0
+    ]
+  );
+}
+
+export async function deleteFolder(id: string) {
+  const db = await dbPromise;
+  await db.runAsync('DELETE FROM folders WHERE id = ?;', [id]);
+}
+
+// ============ Meeting Type Operations ============
+
+export async function listMeetingTypes(): Promise<MeetingType[]> {
+  const db = await dbPromise;
+  const rows = await db.getAllAsync<{
+    id: string;
+    name: string;
+    description: string | null;
+    required_tags: string;
+    default_whisper_model: string | null;
+    created_at: string;
+    synced: number;
+  }>('SELECT * FROM meeting_types ORDER BY name');
+  
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    requiredTags: row.required_tags ? JSON.parse(row.required_tags) : {},
+    defaultWhisperModel: row.default_whisper_model,
+    createdAt: row.created_at,
+    synced: row.synced === 1
+  }));
+}
+
+export async function getMeetingType(id: string): Promise<MeetingType | null> {
+  const db = await dbPromise;
+  const row = await db.getFirstAsync<{
+    id: string;
+    name: string;
+    description: string | null;
+    required_tags: string;
+    default_whisper_model: string | null;
+    created_at: string;
+    synced: number;
+  }>('SELECT * FROM meeting_types WHERE id = ? LIMIT 1', [id]);
+  
+  if (!row) return null;
+  
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    requiredTags: row.required_tags ? JSON.parse(row.required_tags) : {},
+    defaultWhisperModel: row.default_whisper_model,
+    createdAt: row.created_at,
+    synced: row.synced === 1
+  };
+}
+
+export async function upsertMeetingType(meetingType: MeetingType) {
+  const db = await dbPromise;
+  await db.runAsync(
+    `INSERT INTO meeting_types (id, name, description, required_tags, default_whisper_model, created_at, synced)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       required_tags = excluded.required_tags,
+       default_whisper_model = excluded.default_whisper_model,
+       synced = excluded.synced;
+    `,
+    [
+      meetingType.id,
+      meetingType.name,
+      meetingType.description ?? null,
+      JSON.stringify(meetingType.requiredTags ?? {}),
+      meetingType.defaultWhisperModel ?? null,
+      meetingType.createdAt,
+      meetingType.synced ? 1 : 0
+    ]
+  );
+}
+
+export async function deleteMeetingType(id: string) {
+  const db = await dbPromise;
+  await db.runAsync('DELETE FROM meeting_types WHERE id = ?;', [id]);
 }
