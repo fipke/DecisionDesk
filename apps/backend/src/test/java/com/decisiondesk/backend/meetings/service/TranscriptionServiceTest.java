@@ -66,7 +66,7 @@ class TranscriptionServiceTest {
                 "0.1.0",
                 new AppProps.Upload(200),
                 new AppProps.Ai("pt"),
-                new AppProps.Features(true));
+                new AppProps.Features(false));
         transcriptionService = new TranscriptionService(
                 meetingRepository,
                 audioAssetRepository,
@@ -75,7 +75,9 @@ class TranscriptionServiceTest {
                 whisperClient,
                 costCalculator,
                 appProps,
-                new ObjectMapper());
+                new ObjectMapper(),
+                Optional.empty(),
+                Optional.empty());
     }
 
     @Test

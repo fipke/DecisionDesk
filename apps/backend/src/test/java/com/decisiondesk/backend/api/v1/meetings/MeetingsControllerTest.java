@@ -67,7 +67,7 @@ class MeetingsControllerTest {
         UUID meetingId = UUID.randomUUID();
         when(meetingService.transcribeMeeting(meetingId)).thenReturn(MeetingStatus.DONE);
 
-        TranscribeResponse response = controller.transcribe(meetingId);
+        TranscribeResponse response = controller.transcribe(meetingId, null);
 
         assertThat(response.meetingId()).isEqualTo(meetingId);
         assertThat(response.status()).isEqualTo(MeetingStatus.DONE);
