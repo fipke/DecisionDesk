@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import { Folder, Meeting, MeetingType, SyncOperation } from '../types';
+import { Folder, Meeting, MeetingType, Person, MeetingPerson, SyncOperation } from '../types';
 
 const dbPromise = SQLite.openDatabaseAsync('decisiondesk.db');
 
@@ -44,12 +44,33 @@ const MEETING_TYPES_COLUMNS = `
   synced INTEGER DEFAULT 0
 `;
 
+const PEOPLE_COLUMNS = `
+  id TEXT PRIMARY KEY NOT NULL,
+  display_name TEXT NOT NULL,
+  full_name TEXT,
+  email TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  synced INTEGER DEFAULT 0
+`;
+
+const MEETING_PEOPLE_COLUMNS = `
+  meeting_id TEXT NOT NULL,
+  person_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (meeting_id, person_id, role)
+`;
+
 export async function initializeDatabase() {
   const db = await dbPromise;
   await db.execAsync('PRAGMA journal_mode = WAL;');
   await db.execAsync(`CREATE TABLE IF NOT EXISTS meetings (${MEETINGS_COLUMNS});`);
   await db.execAsync(`CREATE TABLE IF NOT EXISTS folders (${FOLDERS_COLUMNS});`);
   await db.execAsync(`CREATE TABLE IF NOT EXISTS meeting_types (${MEETING_TYPES_COLUMNS});`);
+  await db.execAsync(`CREATE TABLE IF NOT EXISTS people (${PEOPLE_COLUMNS});`);
+  await db.execAsync(`CREATE TABLE IF NOT EXISTS meeting_people (${MEETING_PEOPLE_COLUMNS});`);
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS sync_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -389,4 +410,173 @@ export async function upsertMeetingType(meetingType: MeetingType) {
 export async function deleteMeetingType(id: string) {
   const db = await dbPromise;
   await db.runAsync('DELETE FROM meeting_types WHERE id = ?;', [id]);
+}
+
+// ========== People ==========
+
+export async function listPeople(): Promise<Person[]> {
+  const db = await dbPromise;
+  const rows = await db.getAllAsync<{
+    id: string;
+    display_name: string;
+    full_name: string | null;
+    email: string | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+    synced: number;
+  }>('SELECT * FROM people ORDER BY display_name');
+  
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    fullName: row.full_name,
+    email: row.email,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    synced: row.synced === 1
+  }));
+}
+
+export async function searchPeople(query: string): Promise<Person[]> {
+  const db = await dbPromise;
+  const pattern = `${query.toLowerCase()}%`;
+  const rows = await db.getAllAsync<{
+    id: string;
+    display_name: string;
+    full_name: string | null;
+    email: string | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+    synced: number;
+  }>(
+    `SELECT * FROM people 
+     WHERE LOWER(display_name) LIKE ? OR LOWER(full_name) LIKE ?
+     ORDER BY display_name
+     LIMIT 10`,
+    [pattern, pattern]
+  );
+  
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    fullName: row.full_name,
+    email: row.email,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    synced: row.synced === 1
+  }));
+}
+
+export async function getPerson(id: string): Promise<Person | null> {
+  const db = await dbPromise;
+  const row = await db.getFirstAsync<{
+    id: string;
+    display_name: string;
+    full_name: string | null;
+    email: string | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+    synced: number;
+  }>('SELECT * FROM people WHERE id = ? LIMIT 1', [id]);
+  
+  if (!row) return null;
+  
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    fullName: row.full_name,
+    email: row.email,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    synced: row.synced === 1
+  };
+}
+
+export async function upsertPerson(person: Person) {
+  const db = await dbPromise;
+  await db.runAsync(
+    `INSERT INTO people (id, display_name, full_name, email, notes, created_at, updated_at, synced)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       display_name = excluded.display_name,
+       full_name = excluded.full_name,
+       email = excluded.email,
+       notes = excluded.notes,
+       updated_at = excluded.updated_at,
+       synced = excluded.synced;
+    `,
+    [
+      person.id,
+      person.displayName,
+      person.fullName ?? null,
+      person.email ?? null,
+      person.notes ?? null,
+      person.createdAt,
+      person.updatedAt,
+      person.synced ? 1 : 0
+    ]
+  );
+}
+
+export async function deletePerson(id: string) {
+  const db = await dbPromise;
+  await db.runAsync('DELETE FROM people WHERE id = ?;', [id]);
+}
+
+// ========== Meeting-Person associations ==========
+
+export async function getMeetingPeople(meetingId: string): Promise<(Person & { role: string })[]> {
+  const db = await dbPromise;
+  const rows = await db.getAllAsync<{
+    id: string;
+    display_name: string;
+    full_name: string | null;
+    email: string | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+    synced: number;
+    role: string;
+  }>(
+    `SELECT p.*, mp.role FROM people p 
+     JOIN meeting_people mp ON p.id = mp.person_id 
+     WHERE mp.meeting_id = ? 
+     ORDER BY mp.role, p.display_name`,
+    [meetingId]
+  );
+  
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    fullName: row.full_name,
+    email: row.email,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    synced: row.synced === 1,
+    role: row.role
+  }));
+}
+
+export async function addPersonToMeeting(meetingId: string, personId: string, role: 'participant' | 'mentioned') {
+  const db = await dbPromise;
+  await db.runAsync(
+    `INSERT OR IGNORE INTO meeting_people (meeting_id, person_id, role, created_at)
+     VALUES (?, ?, ?, datetime('now'))`,
+    [meetingId, personId, role]
+  );
+}
+
+export async function removePersonFromMeeting(meetingId: string, personId: string, role: 'participant' | 'mentioned') {
+  const db = await dbPromise;
+  await db.runAsync(
+    'DELETE FROM meeting_people WHERE meeting_id = ? AND person_id = ? AND role = ?',
+    [meetingId, personId, role]
+  );
 }

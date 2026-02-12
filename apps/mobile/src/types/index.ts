@@ -47,6 +47,35 @@ export interface MeetingType {
   synced: boolean;
 }
 
+/**
+ * Person who can be a participant or mentioned in meetings (PR08)
+ */
+export interface Person {
+  id: string;
+  displayName: string;  // short name for @mentions
+  fullName: string | null;
+  email: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  synced: boolean;
+}
+
+/**
+ * Role of a person in a meeting (PR08)
+ */
+export type PersonRole = 'participant' | 'mentioned';
+
+/**
+ * Association between a meeting and a person (PR08)
+ */
+export interface MeetingPerson {
+  meetingId: string;
+  personId: string;
+  role: PersonRole;
+  createdAt: string;
+}
+
 export interface Meeting {
   id: string; // local identifier
   remoteId: string | null;

@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
+import com.decisiondesk.backend.folders.FolderService.FolderNotFoundException;
+import com.decisiondesk.backend.people.PersonNotFoundException;
+
 /**
  * Converts backend exceptions into API-friendly error responses.
  */
@@ -26,6 +29,18 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleUploadLimit(MaxUploadSizeExceededException ex) {
         ApiErrorResponse error = ApiErrorResponse.of("UPLOAD_TOO_LARGE", "Uploaded file exceeds configured limit");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    @ExceptionHandler(FolderNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleFolderNotFound(FolderNotFoundException ex) {
+        ApiErrorResponse error = ApiErrorResponse.of("FOLDER_NOT_FOUND", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    @ExceptionHandler(PersonNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handlePersonNotFound(PersonNotFoundException ex) {
+        ApiErrorResponse error = ApiErrorResponse.of("PERSON_NOT_FOUND", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
 
     @ExceptionHandler(Exception.class)
