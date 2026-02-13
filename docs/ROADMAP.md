@@ -1,19 +1,24 @@
 # Roadmap
 
 ## Completed
-- PR 01 — Backend bootstrap + Health + DB + OpenAI config + Costs base
-- PR 02 — Meetings + Upload (store only) + Manual /transcribe (cloud); GET details
-- PR 03 — iOS v1 (record → upload → tap "Transcribe" → see transcript/cost)
+- ✅ PR01 — Backend bootstrap + Health + DB + OpenAI config + Costs base
+- ✅ PR02 — Meetings + Upload (store only) + Manual /transcribe (cloud); GET details
+- ✅ PR03 — iOS v1 (record → upload → tap "Transcribe" → see transcript/cost)
+- ✅ PR04 — macOS v1 (queue-aware UI, disabled initially)
+- ✅ PR07 — Folders, Types, Tags for organization
+- ✅ PR08 — People mentions and GPT summaries
+- ✅ PR09 — Summary templates + GPT-4 integration
+- ✅ **PR-Notes** — Meeting notes system (agenda/live/post notes, series, continuity, transcript import)
 
 ## In Progress
-- PR 04 — macOS v1 (queue-aware UI, disabled initially)
+- 🚧 PR05 — Desktop-local queue (manual accept on Mac)
+- 🚧 PR06 — Desktop-local transcription engine (see LOCAL-TRANSCRIBE.md)
 
 ## Planned
-- PR 05 — Desktop-local queue (manual accept on Mac)
-- PR 06 — Desktop-local transcription engine (see LOCAL-TRANSCRIBE.md)
-- PR 07 — GPT summary (cloud) + costs
-- PR 08 — Web v1
-- PR 09 — Chunked upload, WebSockets, server-local provider, presets/importers, budget
+- PR10 — Web v1 dashboard
+- PR11 — Chunked upload, WebSockets
+- PR12 — Budget tracking and alerts
+- PR13 — Advanced search and filters
 
 ---
 
