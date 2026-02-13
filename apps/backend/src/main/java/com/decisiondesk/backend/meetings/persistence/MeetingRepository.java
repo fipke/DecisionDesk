@@ -52,11 +52,13 @@ public class MeetingRepository {
      * @param id target meeting
      * @return optional meeting row
      */
+    private static final String SELECT_FIELDS = """
+            SELECT id, created_at, status, folder_id, meeting_type_id, tags, title, updated_at,
+                   agenda, live_notes, post_notes, previous_meeting_id, series_id, sequence_num, imported_transcript_source
+            """;
+
     public Optional<Meeting> findById(UUID id) {
-        return jdbcClient.sql("""
-                SELECT id, created_at, status, folder_id, meeting_type_id, tags, title, updated_at 
-                FROM meetings WHERE id = :id
-                """)
+        return jdbcClient.sql(SELECT_FIELDS + " FROM meetings WHERE id = :id")
                 .param("id", id)
                 .query(this::mapMeeting)
                 .optional();
@@ -69,10 +71,7 @@ public class MeetingRepository {
      * @return list of meetings in the folder
      */
     public List<Meeting> findByFolderId(UUID folderId) {
-        return jdbcClient.sql("""
-                SELECT id, created_at, status, folder_id, meeting_type_id, tags, title, updated_at 
-                FROM meetings WHERE folder_id = :folderId ORDER BY created_at DESC
-                """)
+        return jdbcClient.sql(SELECT_FIELDS + " FROM meetings WHERE folder_id = :folderId ORDER BY created_at DESC")
                 .param("folderId", folderId)
                 .query(this::mapMeeting)
                 .list();
@@ -85,10 +84,7 @@ public class MeetingRepository {
      * @return list of meetings of the type
      */
     public List<Meeting> findByMeetingTypeId(UUID meetingTypeId) {
-        return jdbcClient.sql("""
-                SELECT id, created_at, status, folder_id, meeting_type_id, tags, title, updated_at 
-                FROM meetings WHERE meeting_type_id = :meetingTypeId ORDER BY created_at DESC
-                """)
+        return jdbcClient.sql(SELECT_FIELDS + " FROM meetings WHERE meeting_type_id = :meetingTypeId ORDER BY created_at DESC")
                 .param("meetingTypeId", meetingTypeId)
                 .query(this::mapMeeting)
                 .list();
@@ -164,6 +160,77 @@ public class MeetingRepository {
                 .update();
     }
 
+    /**
+     * Finds meetings by series.
+     */
+    public List<Meeting> findBySeriesId(UUID seriesId) {
+        return jdbcClient.sql(SELECT_FIELDS + " FROM meetings WHERE series_id = :seriesId ORDER BY sequence_num, created_at")
+                .param("seriesId", seriesId)
+                .query(this::mapMeeting)
+                .list();
+    }
+
+    /**
+     * Updates agenda for a meeting.
+     */
+    public int updateAgenda(UUID id, String agenda) {
+        return jdbcClient.sql("UPDATE meetings SET agenda = :agenda, updated_at = NOW() WHERE id = :id")
+                .param("agenda", agenda)
+                .param("id", id)
+                .update();
+    }
+
+    /**
+     * Updates live notes for a meeting.
+     */
+    public int updateLiveNotes(UUID id, String liveNotes) {
+        return jdbcClient.sql("UPDATE meetings SET live_notes = :liveNotes, updated_at = NOW() WHERE id = :id")
+                .param("liveNotes", liveNotes)
+                .param("id", id)
+                .update();
+    }
+
+    /**
+     * Updates post notes for a meeting.
+     */
+    public int updatePostNotes(UUID id, String postNotes) {
+        return jdbcClient.sql("UPDATE meetings SET post_notes = :postNotes, updated_at = NOW() WHERE id = :id")
+                .param("postNotes", postNotes)
+                .param("id", id)
+                .update();
+    }
+
+    /**
+     * Links meeting to a previous meeting for continuity.
+     */
+    public int updatePreviousMeeting(UUID id, UUID previousMeetingId) {
+        return jdbcClient.sql("UPDATE meetings SET previous_meeting_id = :previousMeetingId, updated_at = NOW() WHERE id = :id")
+                .param("previousMeetingId", previousMeetingId)
+                .param("id", id)
+                .update();
+    }
+
+    /**
+     * Assigns meeting to a series.
+     */
+    public int updateSeries(UUID id, UUID seriesId, Integer sequenceNum) {
+        return jdbcClient.sql("UPDATE meetings SET series_id = :seriesId, sequence_num = :sequenceNum, updated_at = NOW() WHERE id = :id")
+                .param("seriesId", seriesId)
+                .param("sequenceNum", sequenceNum)
+                .param("id", id)
+                .update();
+    }
+
+    /**
+     * Sets the imported transcript source.
+     */
+    public int updateImportedSource(UUID id, String source) {
+        return jdbcClient.sql("UPDATE meetings SET imported_transcript_source = :source, updated_at = NOW() WHERE id = :id")
+                .param("source", source)
+                .param("id", id)
+                .update();
+    }
+
     private Meeting mapMeeting(ResultSet rs, int rowNum) throws SQLException {
         UUID id = rs.getObject("id", UUID.class);
         OffsetDateTime createdAt = rs.getObject("created_at", OffsetDateTime.class);
@@ -173,7 +240,16 @@ public class MeetingRepository {
         Map<String, String> tags = fromJson(rs.getString("tags"));
         String title = rs.getString("title");
         OffsetDateTime updatedAt = rs.getObject("updated_at", OffsetDateTime.class);
-        return new Meeting(id, createdAt, status, folderId, meetingTypeId, tags, title, updatedAt);
+        // V5 notes fields
+        String agenda = rs.getString("agenda");
+        String liveNotes = rs.getString("live_notes");
+        String postNotes = rs.getString("post_notes");
+        UUID previousMeetingId = rs.getObject("previous_meeting_id", UUID.class);
+        UUID seriesId = rs.getObject("series_id", UUID.class);
+        Integer sequenceNum = (Integer) rs.getObject("sequence_num");
+        String importedSource = rs.getString("imported_transcript_source");
+        return new Meeting(id, createdAt, status, folderId, meetingTypeId, tags, title, updatedAt,
+                agenda, liveNotes, postNotes, previousMeetingId, seriesId, sequenceNum, importedSource);
     }
 
     private String toJson(Map<String, String> map) {
