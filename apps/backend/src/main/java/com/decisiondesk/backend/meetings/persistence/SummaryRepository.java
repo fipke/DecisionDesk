@@ -12,9 +12,9 @@ import org.springframework.stereotype.Repository;
 import com.decisiondesk.backend.meetings.model.Summary;
 
 /**
- * Read-only access to meeting summaries (populated in later roadmap milestones).
+ * Read-only access to meeting summaries for MeetingService.
  */
-@Repository
+@Repository("meetingsSummaryRepository")
 public class SummaryRepository {
 
     private final JdbcClient jdbcClient;
@@ -24,7 +24,10 @@ public class SummaryRepository {
     }
 
     public Optional<Summary> findByMeetingId(UUID meetingId) {
-        return jdbcClient.sql("SELECT id, meeting_id, text_md, created_at FROM summaries WHERE meeting_id = :meetingId")
+        return jdbcClient.sql("""
+                SELECT id, meeting_id, text_md, template_id, model, tokens_used, created_at, updated_at 
+                FROM summaries WHERE meeting_id = :meetingId
+                """)
                 .param("meetingId", meetingId)
                 .query(this::mapSummary)
                 .optional();
@@ -35,6 +38,11 @@ public class SummaryRepository {
                 rs.getObject("id", UUID.class),
                 rs.getObject("meeting_id", UUID.class),
                 rs.getString("text_md"),
-                rs.getObject("created_at", OffsetDateTime.class));
+                rs.getObject("template_id", UUID.class),
+                rs.getString("model"),
+                (Integer) rs.getObject("tokens_used"),
+                rs.getObject("created_at", OffsetDateTime.class),
+                rs.getObject("updated_at", OffsetDateTime.class));
     }
 }
+

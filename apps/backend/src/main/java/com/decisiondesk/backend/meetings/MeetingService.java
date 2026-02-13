@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,7 +49,7 @@ public class MeetingService {
     public MeetingService(MeetingRepository meetingRepository,
                           AudioAssetRepository audioAssetRepository,
                           TranscriptRepository transcriptRepository,
-                          SummaryRepository summaryRepository,
+                          @Qualifier("meetingsSummaryRepository") SummaryRepository summaryRepository,
                           UsageRecordRepository usageRecordRepository,
                           AudioStorageService storageService,
                           MeetingCostAggregator costAggregator,

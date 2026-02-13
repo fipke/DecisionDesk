@@ -23,6 +23,8 @@ import com.decisiondesk.backend.meetings.model.AudioUploadResult;
 import com.decisiondesk.backend.meetings.model.Meeting;
 import com.decisiondesk.backend.meetings.model.MeetingCostBreakdown;
 import com.decisiondesk.backend.meetings.model.MeetingDetails;
+import com.decisiondesk.backend.summaries.model.Summary;
+import com.decisiondesk.backend.summaries.service.SummaryService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -37,9 +39,11 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 public class MeetingsController {
 
     private final MeetingService meetingService;
+    private final SummaryService summaryService;
 
-    public MeetingsController(MeetingService meetingService) {
+    public MeetingsController(MeetingService meetingService, SummaryService summaryService) {
         this.meetingService = meetingService;
+        this.summaryService = summaryService;
     }
 
     @PostMapping
@@ -119,4 +123,44 @@ public class MeetingsController {
                 cost.total().usd(), cost.total().brl());
         return new MeetingDetailsResponse.Cost(whisperResponse, gptResponse, totalResponse);
     }
+
+    @PostMapping("/{meetingId}/summarize")
+    @Operation(
+            summary = "Generate meeting summary",
+            description = "Uses GPT to generate a summary from the meeting transcript. Optionally specify a template ID.")
+    @ApiResponse(responseCode = "200", description = "Summary generated", content = @Content(schema = @Schema(implementation = SummarizeResponse.class)))
+    public SummarizeResponse summarize(
+            @PathVariable UUID meetingId,
+            @RequestBody(required = false) SummarizeRequest request) {
+        UUID templateId = request != null ? request.templateId() : null;
+        Summary summary = summaryService.generateSummary(meetingId, templateId);
+        return new SummarizeResponse(summary.id(), summary.meetingId(), summary.textMd(), 
+                summary.templateId(), summary.model(), summary.tokensUsed());
+    }
+
+    @GetMapping("/{meetingId}/summary")
+    @Operation(
+            summary = "Get meeting summary",
+            description = "Returns the existing summary for a meeting if available.")
+    @ApiResponse(responseCode = "200", description = "Summary found")
+    @ApiResponse(responseCode = "404", description = "No summary exists")
+    public SummarizeResponse getSummary(@PathVariable UUID meetingId) {
+        Summary summary = summaryService.getSummary(meetingId)
+                .orElseThrow(() -> new com.decisiondesk.backend.web.ApiException(
+                        HttpStatus.NOT_FOUND, "NO_SUMMARY", "Meeting has no summary"));
+        return new SummarizeResponse(summary.id(), summary.meetingId(), summary.textMd(),
+                summary.templateId(), summary.model(), summary.tokensUsed());
+    }
+
+    // Request/Response records for summarization
+    public record SummarizeRequest(UUID templateId) {}
+    
+    public record SummarizeResponse(
+            UUID id,
+            UUID meetingId,
+            String textMd,
+            UUID templateId,
+            String model,
+            Integer tokensUsed
+    ) {}
 }

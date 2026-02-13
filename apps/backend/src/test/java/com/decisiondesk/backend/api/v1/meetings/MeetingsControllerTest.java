@@ -22,6 +22,7 @@ import com.decisiondesk.backend.meetings.model.Meeting;
 import com.decisiondesk.backend.meetings.model.MeetingCostBreakdown;
 import com.decisiondesk.backend.meetings.model.MeetingDetails;
 import com.decisiondesk.backend.meetings.model.Transcript;
+import com.decisiondesk.backend.summaries.service.SummaryService;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingsControllerTest {
@@ -29,11 +30,14 @@ class MeetingsControllerTest {
     @Mock
     private MeetingService meetingService;
 
+    @Mock
+    private SummaryService summaryService;
+
     private MeetingsController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new MeetingsController(meetingService);
+        controller = new MeetingsController(meetingService, summaryService);
     }
 
     @Test
