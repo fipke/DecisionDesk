@@ -48,4 +48,11 @@ transcription:
   # Desktop queue for Mac app (desktop_local provider)
   desktop:
     enabled: ${TRANSCRIPTION_DESKTOP_ENABLED:true}
+    job-timeout-minutes: ${DESKTOP_JOB_TIMEOUT_MINUTES:30}
+    max-retries: ${DESKTOP_MAX_RETRIES:3}
+    cleanup-retention-hours: ${DESKTOP_CLEANUP_RETENTION_HOURS:24}
+    retry-check-minutes: ${DESKTOP_RETRY_CHECK_MINUTES:5}
+    timeout-check-minutes: ${DESKTOP_TIMEOUT_CHECK_MINUTES:10}
+    stats-log-minutes: ${DESKTOP_STATS_LOG_MINUTES:60}
+    cleanup-cron: ${DESKTOP_CLEANUP_CRON:0 0 3 * * ?}
 

@@ -123,13 +123,16 @@ iOS records meeting → Uploads to backend → Desktop accepts from queue
 
 ## Implementation Checklist
 
-- [ ] whisper.cpp integration with Metal
+- [x] whisper.cpp integration with Metal
 - [ ] Model download/management UI
-- [ ] pyannote-audio Python bridge
+- [x] pyannote-audio Python bridge (diarize.py)
 - [ ] Audio capture (mic + system audio)
 - [ ] Real-time streaming mode
-- [ ] Batch processing mode
-- [ ] Settings UI for model selection
+- [x] Batch processing mode
+- [x] Settings UI for model selection
 - [ ] Export to SRT/VTT/JSON/TXT
-- [ ] Backend sync (POST transcripts)
-- [ ] Queue acceptance from mobile uploads
+- [x] Backend sync (POST transcripts)
+- [x] Queue acceptance from mobile uploads
+- [x] Persistent queue with retry logic
+- [x] Automatic timeout detection
+- [x] Job status tracking and monitoring

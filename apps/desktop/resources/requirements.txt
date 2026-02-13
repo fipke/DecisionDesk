@@ -1,0 +1,9 @@
+# Desktop App Python Dependencies
+
+# Speaker diarization
+pyannote-audio>=3.1.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Optional: For faster inference
+# onnxruntime>=1.15.0
