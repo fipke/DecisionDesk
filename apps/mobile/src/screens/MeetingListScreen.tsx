@@ -66,7 +66,7 @@ export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
-        <Pressable onPress={() => console.log('Folders — coming in Task 10')} className="mr-2">
+        <Pressable onPress={() => navigation.navigate('Folders')} className="mr-2">
           <FolderIcon size={22} color="#94a3b8" />
         </Pressable>
       ),
