@@ -66,12 +66,18 @@ export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
-        <Pressable onPress={() => navigation.navigate('Folders')} className="mr-2">
+        <Pressable
+          onPress={() => navigation.navigate('Folders')}
+          className="mr-2 h-10 w-10 items-center justify-center"
+        >
           <FolderIcon size={22} color="#94a3b8" />
         </Pressable>
       ),
       headerRight: () => (
-        <Pressable onPress={() => navigation.navigate('Settings')}>
+        <Pressable
+          onPress={() => navigation.navigate('Settings')}
+          className="h-10 w-10 items-center justify-center"
+        >
           <Cog6ToothIcon size={22} color="#94a3b8" />
         </Pressable>
       ),
