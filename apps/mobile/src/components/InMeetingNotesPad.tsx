@@ -1,5 +1,5 @@
 import { Modal, Pressable, Text, TextInput, View } from 'react-native';
-import { useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface InMeetingNotesPadProps {
   visible: boolean;
@@ -10,7 +10,11 @@ interface InMeetingNotesPadProps {
 
 export function InMeetingNotesPad({ visible, initialValue = '', onSave, onClose }: InMeetingNotesPadProps) {
   const [text, setText] = useState(initialValue);
-  const inputRef = useRef<TextInput>(null);
+
+  // Sync text when modal opens with a new initialValue
+  useEffect(() => {
+    if (visible) setText(initialValue);
+  }, [visible, initialValue]);
 
   const handleSave = () => {
     onSave(text);
@@ -33,7 +37,6 @@ export function InMeetingNotesPad({ visible, initialValue = '', onSave, onClose 
           </Pressable>
         </View>
         <TextInput
-          ref={inputRef}
           className="min-h-[160px] text-sm leading-relaxed text-slate-300"
           value={text}
           onChangeText={setText}
