@@ -31,7 +31,7 @@ export function WaveformView({ isRecording, barCount = 30, height = 56 }: Wavefo
             delay: i * 30,
           }),
           Animated.timing(anim, {
-            toValue: 0.1 + Math.random() * 0.3,
+            toValue: 0.2 + Math.random() * 0.15,
             duration: 200 + Math.random() * 300,
             easing: Easing.inOut(Easing.ease),
             useNativeDriver: true,
