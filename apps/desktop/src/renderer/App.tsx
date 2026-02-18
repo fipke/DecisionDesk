@@ -17,6 +17,22 @@ function Sidebar() {
     queryFn: () => window.electronAPI.whisper.getStatus()
   });
 
+  const { data: syncCount } = useQuery({
+    queryKey: ['sync-count'],
+    queryFn: () => window.electronAPI.db.syncQueueCount(),
+    refetchInterval: 5000
+  });
+
+  const [connectivity, setConnectivity] = useState<{ online: boolean; backendReachable: boolean }>({
+    online: true,
+    backendReachable: false
+  });
+
+  useEffect(() => {
+    window.electronAPI.connectivity.getStatus().then(setConnectivity);
+    window.electronAPI.connectivity.onStatusChange(setConnectivity);
+  }, []);
+
   return (
     <aside className="flex w-64 flex-col border-r border-slate-800 bg-slate-900">
       {/* Drag region / app title */}
@@ -63,8 +79,32 @@ function Sidebar() {
         </NavLink>
       </nav>
 
-      {/* Status */}
-      <div className="border-t border-slate-800 p-4">
+      {/* Status footer */}
+      <div className="border-t border-slate-800 p-4 space-y-2">
+        {/* Connectivity */}
+        <div className="flex items-center gap-2">
+          <div className={`h-2 w-2 rounded-full ${
+            connectivity.backendReachable
+              ? 'bg-emerald-500'
+              : connectivity.online
+                ? 'bg-amber-500'
+                : 'bg-red-500'
+          }`} />
+          <span className="text-xs text-slate-400">
+            {connectivity.backendReachable
+              ? 'Backend conectado'
+              : connectivity.online
+                ? 'Offline do backend'
+                : 'Sem conexão'}
+          </span>
+          {(syncCount ?? 0) > 0 && (
+            <span className="ml-auto rounded-full bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+              {syncCount} pendente{(syncCount ?? 0) > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
+        {/* Whisper */}
         <div className="flex items-center gap-2">
           <div className={`h-2 w-2 rounded-full ${whisperStatus?.available ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <span className="text-xs text-slate-400">
@@ -72,7 +112,7 @@ function Sidebar() {
           </span>
         </div>
         {whisperStatus?.available && (
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="text-xs text-slate-500 pl-4">
             Modelos: {whisperStatus.models.join(', ') || 'Nenhum'}
           </div>
         )}
