@@ -1,87 +1,162 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useLayoutEffect } from 'react';
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
-import { Cog6ToothIcon, PlusIcon } from 'react-native-heroicons/outline';
-
-import { MeetingListItem } from '../components/MeetingListItem';
-import { PrimaryButton } from '../components/PrimaryButton';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  SectionList,
+  Text,
+  View,
+} from 'react-native';
+import { Cog6ToothIcon, FolderIcon, PlusIcon } from 'react-native-heroicons/outline';
 import * as Network from 'expo-network';
 import { NetworkStateType } from 'expo-network';
 
+import { EmptyState } from '../components/EmptyState';
+import { MeetingCard } from '../components/MeetingCard';
+import { SearchBar } from '../components/SearchBar';
 import { useSyncQueue } from '../hooks/useSyncQueue';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useMeetings } from '../state/MeetingContext';
 import { useSettings } from '../state/SettingsContext';
+import type { Meeting } from '../types';
+
+// Inline date grouping to avoid @decisiondesk/utils bundler issues
+function formatRelativeDate(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return 'Hoje';
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Ontem';
+  return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+}
+
+function groupByDate(items: Meeting[], getDate: (item: Meeting) => string): Record<string, Meeting[]> {
+  return items.reduce<Record<string, Meeting[]>>((acc, item) => {
+    const key = formatRelativeDate(getDate(item));
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+}
+
+/** Adapts global Meeting to the shape expected by MeetingCard (null → undefined for optional strings). */
+function toCardMeeting(m: Meeting) {
+  return {
+    id: m.id,
+    status: m.status,
+    createdAt: m.createdAt,
+    title: m.title ?? undefined,
+    costBrl: m.costBrl ?? undefined,
+    costUsd: m.costUsd ?? undefined,
+  };
+}
 
 export type MeetingListScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
   const { meetings, loading, syncPendingOperations } = useMeetings();
   const { allowCellular } = useSettings();
+  const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   useSyncQueue();
 
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable onPress={() => console.log('Folders — coming in Task 10')} className="mr-2">
+          <FolderIcon size={22} color="#94a3b8" />
+        </Pressable>
+      ),
       headerRight: () => (
-        <TouchableOpacity onPress={() => navigation.navigate('Settings')}> 
-          <Cog6ToothIcon size={20} color="#94a3b8" />
-        </TouchableOpacity>
-      )
+        <Pressable onPress={() => navigation.navigate('Settings')}>
+          <Cog6ToothIcon size={22} color="#94a3b8" />
+        </Pressable>
+      ),
     });
   }, [navigation]);
 
   useFocusEffect(
     useCallback(() => {
       Network.getNetworkStateAsync().then((state) => {
-        if (!state.isConnected) {
-          return;
-        }
-        if (state.type === NetworkStateType.CELLULAR && !allowCellular) {
-          return;
-        }
+        if (!state.isConnected) return;
+        if (state.type === NetworkStateType.CELLULAR && !allowCellular) return;
         syncPendingOperations();
       });
     }, [allowCellular, syncPendingOperations])
   );
 
-  const handleCreateRecording = useCallback(() => {
-    navigation.navigate('Record');
-  }, [navigation]);
+  const filtered = useMemo(() => {
+    if (!search.trim()) return meetings;
+    const q = search.toLowerCase();
+    return meetings.filter(
+      (m) =>
+        m.title?.toLowerCase().includes(q) ||
+        m.transcriptText?.toLowerCase().includes(q)
+    );
+  }, [meetings, search]);
+
+  const sections = useMemo(() => {
+    const grouped = groupByDate(filtered, (m) => m.createdAt);
+    return Object.entries(grouped).map(([title, data]) => ({ title, data }));
+  }, [filtered]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await syncPendingOperations();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [syncPendingOperations]);
 
   return (
-    <View className="flex-1 bg-slate-950 px-4 py-6">
-      <PrimaryButton
-        title="Nova gravação"
-        onPress={handleCreateRecording}
-        icon={<PlusIcon size={18} color="#0f172a" />}
-      />
-      {loading ? (
-        <View className="mt-10 items-center justify-center">
-          <ActivityIndicator size="large" color="#34d399" />
-          <Text className="mt-3 text-sm text-slate-400">Carregando reuniões…</Text>
-        </View>
-      ) : meetings.length === 0 ? (
-        <View className="mt-12 items-center">
-          <Text className="text-base font-medium text-slate-200">Nenhuma reunião ainda</Text>
-          <Text className="mt-2 text-center text-sm text-slate-400">
-            Toque em “Nova gravação” para capturar a próxima conversa.
-          </Text>
-        </View>
+    <View className="flex-1 bg-slate-950">
+      <View className="px-4 pt-3 pb-2">
+        <SearchBar
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Buscar reuniões…"
+        />
+      </View>
+
+      {meetings.length === 0 && !loading ? (
+        <EmptyState
+          icon="🎙"
+          title="Nenhuma reunião ainda"
+          subtitle="Toque em ⊕ para capturar a próxima conversa."
+        />
       ) : (
-        <FlatList
-          className="mt-6"
-          data={meetings}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#34d399" />
+          }
+          renderSectionHeader={({ section: { title } }) => (
+            <Text className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              {title}
+            </Text>
+          )}
           renderItem={({ item }) => (
-            <MeetingListItem
-              meeting={item}
+            <MeetingCard
+              meeting={toCardMeeting(item)}
               onPress={() => navigation.navigate('MeetingDetail', { id: item.id })}
             />
           )}
         />
       )}
+
+      {/* FAB */}
+      <Pressable
+        onPress={() => navigation.navigate('Record')}
+        className="absolute bottom-8 right-5 h-14 w-14 items-center justify-center rounded-full bg-emerald-500 shadow-lg active:bg-emerald-600"
+      >
+        <PlusIcon size={26} color="#0f172a" />
+      </Pressable>
     </View>
   );
 }
