@@ -93,6 +93,11 @@ describe('highlightMatches', () => {
     const highlighted = result.filter((s) => s.highlighted);
     expect(highlighted).toHaveLength(2);
   });
+
+  it('handles regex special characters in query', () => {
+    const result = highlightMatches('price (USD)', '(USD)');
+    expect(result.some((s) => s.highlighted && s.text === '(USD)')).toBe(true);
+  });
 });
 
 describe('parseSpeakerLine', () => {
@@ -112,6 +117,11 @@ describe('parseSpeakerLine', () => {
 
   it('returns null for empty string', () => {
     expect(parseSpeakerLine('')).toBeNull();
+  });
+
+  it('parses "01:30:45 Speaker: text" HH:MM:SS format', () => {
+    const result = parseSpeakerLine('01:30:45 Ana: Important point');
+    expect(result).toEqual({ speaker: 'Ana', startSec: 5445, text: 'Important point' });
   });
 });
 

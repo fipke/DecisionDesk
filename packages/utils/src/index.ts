@@ -21,7 +21,8 @@ export function formatRelativeDate(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
   const todayStr = now.toDateString();
-  const yesterday = new Date(now.getTime() - 86400000);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
 
   if (date.toDateString() === todayStr) return 'Hoje';
   if (date.toDateString() === yesterday.toDateString()) return 'Ontem';
@@ -63,13 +64,10 @@ export function highlightMatches(
   const parts = text.split(regex);
 
   const segments: HighlightSegment[] = [];
-  for (const part of parts) {
-    if (part.length === 0) continue;
-    segments.push({
-      text: part,
-      highlighted: regex.test(part),
-    });
-    regex.lastIndex = 0; // reset stateful regex after test()
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].length === 0) continue;
+    // After split with one capturing group, odd indices are always the captured match
+    segments.push({ text: parts[i], highlighted: i % 2 === 1 });
   }
 
   if (segments.length === 0) return [{ text, highlighted: false }];
