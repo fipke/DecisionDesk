@@ -73,7 +73,7 @@ export class ApiService {
 
   async healthCheck(): Promise<boolean> {
     try {
-      await this.client.get('/health');
+      await this.client.get('/api/v1/health');
       return true;
     } catch {
       return false;
