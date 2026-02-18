@@ -80,6 +80,23 @@ export async function initializeDatabase() {
     );
   `);
   
+  // Schema migrations: add columns that may be missing from databases created before PR07/PR08.
+  // SQLite does not support ADD COLUMN IF NOT EXISTS, so we catch errors for already-existing columns.
+  const meetingColumnMigrations = [
+    'ALTER TABLE meetings ADD COLUMN folder_id TEXT',
+    'ALTER TABLE meetings ADD COLUMN meeting_type_id TEXT',
+    'ALTER TABLE meetings ADD COLUMN tags TEXT',
+    'ALTER TABLE meetings ADD COLUMN title TEXT',
+    'ALTER TABLE meetings ADD COLUMN updated_at TEXT',
+  ];
+  for (const sql of meetingColumnMigrations) {
+    try {
+      await db.execAsync(sql);
+    } catch {
+      // Column already exists — safe to ignore
+    }
+  }
+
   // Insert default root folder if not exists
   await db.runAsync(`
     INSERT OR IGNORE INTO folders (id, name, path, parent_id, default_tags, created_at, updated_at, synced)
