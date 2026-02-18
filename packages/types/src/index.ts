@@ -118,6 +118,7 @@ export type QueueJobStatus =
 export interface QueueJob {
   id: ID;
   meetingId: ID;
+  deviceId?: string;
   status: QueueJobStatus;
   model: string;
   language: string;
@@ -139,4 +140,25 @@ export interface ConnectivityStatus {
 export interface HighlightSegment {
   text: string;
   highlighted: boolean;
+}
+
+// ─── Meeting Series ────────────────────────────────────────────
+export interface MeetingSeries {
+  id: ID;
+  name: string;
+  description?: string;
+  recurrenceRule?: string;
+}
+
+export interface MeetingSeriesEntry {
+  seriesId: ID;
+  meetingId: ID;
+  sequenceNumber: number;
+}
+
+// ─── User Preferences ──────────────────────────────────────────
+export interface UserPreferences {
+  id: ID;
+  userKey: string;
+  preferences: Record<string, unknown>;
 }
