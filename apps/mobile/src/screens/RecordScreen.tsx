@@ -1,11 +1,12 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Audio } from 'expo-av';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Pressable, Text, View } from 'react-native';
 import * as Network from 'expo-network';
 import { NetworkStateType } from 'expo-network';
 
-import { PrimaryButton } from '../components/PrimaryButton';
+import { InMeetingNotesPad } from '../components/InMeetingNotesPad';
+import { WaveformView } from '../components/WaveformView';
 import { useNetworkGuard } from '../hooks/useNetworkGuard';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useMeetings } from '../state/MeetingContext';
@@ -13,11 +14,20 @@ import { useSettings } from '../state/SettingsContext';
 
 export type RecordScreenProps = NativeStackScreenProps<RootStackParamList, 'Record'>;
 
+function formatDuration(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+  const s = (totalSec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
 export function RecordScreen({ navigation }: RecordScreenProps) {
   const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [durationMillis, setDurationMillis] = useState(0);
   const [isPreparing, setIsPreparing] = useState(false);
+  const [notesVisible, setNotesVisible] = useState(false);
+  const [liveNotes, setLiveNotes] = useState('');
   const { recordAndQueue, syncPendingOperations } = useMeetings();
   const { ensureAllowedConnection } = useNetworkGuard();
   const { allowCellular } = useSettings();
@@ -36,13 +46,6 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
       recording?.setOnRecordingStatusUpdate(undefined);
     };
   }, [recording]);
-
-  const formattedDuration = useMemo(() => {
-    const totalSeconds = Math.floor(durationMillis / 1000);
-    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-    const seconds = String(totalSeconds % 60).padStart(2, '0');
-    return `${minutes}:${seconds}`;
-  }, [durationMillis]);
 
   const startRecording = useCallback(async () => {
     if (recording) {
@@ -144,23 +147,62 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
   }, [allowCellular]);
 
   return (
-    <View className="flex-1 items-center justify-center bg-slate-950 px-6">
-      <Text className="text-lg font-semibold text-slate-100">Gravação em AAC 48 kHz</Text>
-      <Text className="mt-2 text-center text-sm text-slate-400">
-        Toque no botão para iniciar ou finalizar a captura. A transcrição é feita manualmente após o envio.
-      </Text>
-      <View className="mt-10 h-40 w-40 items-center justify-center rounded-full border-4 border-emerald-500">
-        <Text className="text-4xl font-bold text-emerald-400">{formattedDuration}</Text>
+    <View className="flex-1 bg-slate-950 px-6">
+      {/* Notes FAB — only visible while recording */}
+      {!!recording && (
+        <Pressable
+          className="absolute right-6 top-14 z-10 h-12 w-12 items-center justify-center rounded-full bg-slate-800"
+          onPress={() => setNotesVisible(true)}
+          accessibilityLabel="Abrir anotações"
+        >
+          <Text className="text-xl">📝</Text>
+        </Pressable>
+      )}
+
+      {/* Main content — centered vertically */}
+      <View className="flex-1 items-center justify-center">
+        {/* Waveform */}
+        <WaveformView height={80} isRecording={!!recording} />
+
+        {/* Timer */}
+        <Text className="mt-6 font-mono text-5xl font-bold text-slate-100">
+          {formatDuration(durationMillis)}
+        </Text>
+
+        {/* Status text */}
+        <View className="mt-3 flex-row items-center gap-2">
+          {!!recording && (
+            <View className="h-2 w-2 rounded-full bg-red-500" />
+          )}
+          <Text className="text-sm text-slate-400">
+            {recording ? 'Gravando…' : 'Pronto para gravar'}
+          </Text>
+        </View>
       </View>
-      <PrimaryButton
-        title={recording ? 'Parar e salvar' : 'Gravar agora'}
-        onPress={handlePrimaryAction}
-        disabled={isPreparing}
-        variant={recording ? 'danger' : 'primary'}
+
+      {/* Bottom action button */}
+      <View className="pb-12">
+        <Pressable
+          className={`w-full items-center rounded-2xl py-4 ${
+            recording ? 'bg-red-600' : 'bg-emerald-600'
+          } ${isPreparing ? 'opacity-50' : 'opacity-100'}`}
+          onPress={handlePrimaryAction}
+          disabled={isPreparing}
+          accessibilityRole="button"
+        >
+          <Text className="text-base font-semibold text-white">
+            {recording ? 'Parar e salvar' : 'Gravar agora'}
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* In-meeting notes modal */}
+      <InMeetingNotesPad
+        visible={notesVisible}
+        initialValue={liveNotes}
+        onSave={(text) => setLiveNotes(text)}
+        onClose={() => setNotesVisible(false)}
       />
-      <Text className="mt-6 text-center text-xs text-slate-500">
-        Os arquivos são armazenados localmente e enviados assim que houver conexão liberada.
-      </Text>
     </View>
   );
 }
