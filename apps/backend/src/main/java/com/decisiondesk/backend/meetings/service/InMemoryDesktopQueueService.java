@@ -23,8 +23,8 @@ import org.springframework.stereotype.Service;
  *   <li>{@code transcription.desktop.enabled=true} - enable this service</li>
  * </ul>
  */
-@Service
-@ConditionalOnProperty(name = "transcription.desktop.enabled", havingValue = "true")
+// Superseded by PersistentDesktopQueueService (PR05). Kept for unit-test use only.
+// Not registered as a Spring bean in production.
 public class InMemoryDesktopQueueService implements DesktopQueueService {
 
     private static final Logger log = LoggerFactory.getLogger(InMemoryDesktopQueueService.class);

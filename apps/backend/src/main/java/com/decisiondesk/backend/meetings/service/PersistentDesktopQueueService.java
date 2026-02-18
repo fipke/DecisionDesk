@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ import com.decisiondesk.backend.meetings.persistence.TranscriptionQueueRepositor
  *   <li>{@code transcription.desktop.cleanup-retention-hours=24} - retention for completed jobs</li>
  * </ul>
  */
+@Primary
 @Service
 @ConditionalOnProperty(name = "transcription.desktop.enabled", havingValue = "true")
 public class PersistentDesktopQueueService implements DesktopQueueService {
