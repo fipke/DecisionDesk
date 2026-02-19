@@ -127,6 +127,11 @@ docs/addenda/ENV-DELTA.md
 docs/specs/PR0{2-6}-SPEC.md    (feature-specific deltas)
 ```
 
+## Git / Commits
+
+- **NEVER add Co-Authored-By lines** to commits, files, or any content.
+- Conventional Commits style: `type(scope): message`.
+
 ## Environment
 
 PostgreSQL via Docker Compose (port 5435, user/pass/db: `decisiondesk`). Backend needs `.env` — copy from `.env.example` and fill `OPENAI_API_KEY`. See `docs/ENV.md` for all variables.
