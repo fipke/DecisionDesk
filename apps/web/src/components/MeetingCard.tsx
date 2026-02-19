@@ -27,6 +27,15 @@ function StatusBadge({ status }: StatusBadgeProps) {
   );
 }
 
+// ─── Duration formatter ──────────────────────────────────────────────────────
+
+function formatDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m === 0) return `${s}s`;
+  return s > 0 ? `${m}m ${s}s` : `${m} min`;
+}
+
 // ─── Utility helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -58,14 +67,14 @@ interface MeetingCardProps {
 /** Compact card representing a single meeting in the list view. */
 export function MeetingCard({ meeting }: MeetingCardProps) {
   const navigate = useNavigate();
-  const title = meeting.title ?? 'Reunião';
+  const title = meeting.title ?? 'Gravação';
   const brl = formatBrl(meeting.costBrl);
 
   return (
     <button
       type="button"
       onClick={() => navigate(`/meetings/${meeting.id}`)}
-      className="w-full text-left bg-slate-900 hover:bg-slate-800/80 border border-slate-800 rounded-xl px-4 py-3.5 transition-colors cursor-pointer group"
+      className="w-full text-left bg-dd-surface hover:bg-dd-elevated/70 border border-dd-border rounded-xl px-4 py-3.5 transition-colors cursor-pointer group"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -79,7 +88,18 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
 
       {/* Meta row */}
       <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-        {meeting.minutes != null && (
+        {meeting.meetingTypeName && (
+          <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-indigo-400 border border-indigo-500/20">
+            {meeting.meetingTypeName}
+          </span>
+        )}
+        {meeting.durationSec != null && meeting.durationSec > 0 && (
+          <span className="flex items-center gap-1">
+            <Clock size={11} />
+            {formatDuration(meeting.durationSec)}
+          </span>
+        )}
+        {meeting.durationSec == null && meeting.minutes != null && meeting.minutes > 0 && (
           <span className="flex items-center gap-1">
             <Clock size={11} />
             {meeting.minutes} min

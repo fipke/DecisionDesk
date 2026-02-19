@@ -6,11 +6,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Design tokens aligned with desktop app
+        // DecisionDesk design tokens — deep navy dark theme
+        dd: {
+          base: 'var(--dd-base)',
+          surface: 'var(--dd-surface)',
+          elevated: 'var(--dd-elevated)',
+          border: 'var(--dd-border)',
+          'border-subtle': 'var(--dd-border-subtle)',
+        },
         brand: {
-          DEFAULT: '#10b981', // emerald-500
-          light: '#34d399',   // emerald-400
-          dark: '#059669',    // emerald-600
+          DEFAULT: '#6366f1',
+          light: '#818cf8',
+          dark: '#4f46e5',
+          subtle: 'rgba(99,102,241,0.10)',
         },
       },
       fontFamily: {
