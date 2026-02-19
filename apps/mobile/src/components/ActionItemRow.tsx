@@ -19,7 +19,7 @@ export function ActionItemRow({ item, onToggle }: ActionItemRowProps) {
     <Pressable onPress={onToggle} className="mb-2 flex-row items-start gap-3">
       <View
         className={`mt-0.5 h-4 w-4 items-center justify-center rounded border ${
-          item.completed ? 'border-emerald-500 bg-emerald-500' : 'border-slate-600 bg-transparent'
+          item.completed ? 'border-indigo-500 bg-indigo-500' : 'border-slate-600 bg-transparent'
         }`}
       >
         {item.completed ? (
@@ -35,7 +35,7 @@ export function ActionItemRow({ item, onToggle }: ActionItemRowProps) {
           {item.text}
         </Text>
         {item.assignee ? (
-          <Text className="mt-0.5 text-xs text-emerald-400">@{item.assignee}</Text>
+          <Text className="mt-0.5 text-xs text-indigo-400">@{item.assignee}</Text>
         ) : null}
       </View>
     </Pressable>

@@ -41,7 +41,7 @@ function HighlightedText({ text, query }: HighlightedTextProps) {
     <Text className="text-sm leading-relaxed text-slate-300">
       {segments.map((seg, i) =>
         seg.highlighted ? (
-          <Text key={i} className="rounded bg-emerald-950 text-emerald-300">{seg.text}</Text>
+          <Text key={i} className="rounded bg-indigo-950 text-indigo-300">{seg.text}</Text>
         ) : (
           <Text key={i}>{seg.text}</Text>
         )
@@ -77,7 +77,7 @@ export function TranscriptView({ lines, searchQuery = '' }: TranscriptViewProps)
               </Text>
             )}
             {line.speaker && (
-              <Text className="text-xs font-semibold text-emerald-400">{line.speaker}</Text>
+              <Text className="text-xs font-semibold text-indigo-400">{line.speaker}</Text>
             )}
           </View>
           <HighlightedText text={line.text} query={searchQuery} />

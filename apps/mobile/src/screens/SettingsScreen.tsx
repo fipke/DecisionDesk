@@ -4,7 +4,8 @@ import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useSettings } from '../state/SettingsContext';
-import { TranscriptionProvider, WhisperModel } from '../types';
+import { useTheme } from '../state/ThemeContext';
+import { SummaryProvider, TranscriptionProvider, WhisperModel } from '../types';
 
 export type SettingsScreenProps = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -34,6 +35,19 @@ const MODEL_OPTIONS: { value: WhisperModel; label: string; description: string }
   { value: 'tiny', label: 'Tiny', description: '75MB, ~150x realtime, precisão básica' }
 ];
 
+const SUMMARY_PROVIDER_OPTIONS: { value: SummaryProvider; label: string; description: string }[] = [
+  {
+    value: 'ollama',
+    label: 'Ollama (via servidor)',
+    description: 'Gratuito, privado. Modelo local rodando no servidor.'
+  },
+  {
+    value: 'openai',
+    label: 'OpenAI (via servidor)',
+    description: 'Pago, alta qualidade. GPT-4o via API do backend.'
+  }
+];
+
 function RadioOption<T extends string>({
   value,
   selected,
@@ -51,19 +65,19 @@ function RadioOption<T extends string>({
     <Pressable
       onPress={() => onSelect(value)}
       className={`mt-2 rounded-xl border px-4 py-3 ${
-        selected ? 'border-emerald-500 bg-emerald-950/30' : 'border-slate-700 bg-slate-800/50'
+        selected ? 'border-indigo-500 bg-indigo-500/10' : 'border-dd-border bg-dd-elevated/50'
       }`}
     >
       <View className="flex-row items-center">
         <View
           className={`mr-3 h-5 w-5 items-center justify-center rounded-full border-2 ${
-            selected ? 'border-emerald-500' : 'border-slate-500'
+            selected ? 'border-indigo-500' : 'border-slate-500'
           }`}
         >
-          {selected && <View className="h-2.5 w-2.5 rounded-full bg-emerald-500" />}
+          {selected && <View className="h-2.5 w-2.5 rounded-full bg-indigo-500" />}
         </View>
         <View className="flex-1">
-          <Text className={`text-base font-medium ${selected ? 'text-emerald-400' : 'text-slate-200'}`}>
+          <Text className={`text-base font-medium ${selected ? 'text-indigo-400' : 'text-slate-200'}`}>
             {label}
           </Text>
           <Text className="mt-0.5 text-xs text-slate-400">{description}</Text>
@@ -74,13 +88,16 @@ function RadioOption<T extends string>({
 }
 
 export function SettingsScreen() {
+  const { theme: appTheme, setTheme: setAppTheme } = useTheme();
   const {
     allowCellular,
     setAllowCellular,
     transcription,
     setTranscriptionProvider,
     setWhisperModel,
-    setEnableDiarization
+    setEnableDiarization,
+    summaryProvider,
+    setSummaryProvider
   } = useSettings();
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -95,9 +112,39 @@ export function SettingsScreen() {
   };
 
   return (
-    <ScrollView className="flex-1 bg-slate-950 px-6 py-6" contentInsetAdjustmentBehavior="automatic">
+    <ScrollView className="flex-1 bg-dd-base px-6 py-6" contentInsetAdjustmentBehavior="automatic">
+      {/* Appearance */}
+      <View className="mb-6 rounded-2xl border border-dd-border bg-dd-surface px-4 py-5">
+        <Text className="text-lg font-semibold text-slate-100">Aparência</Text>
+        <Text className="mt-1 text-sm text-slate-400">Tema visual do aplicativo</Text>
+        <View className="mt-3 flex-row gap-3">
+          <Pressable
+            onPress={() => setAppTheme('dark')}
+            className={`flex-1 rounded-xl border px-4 py-3 ${
+              appTheme === 'dark' ? 'border-indigo-500 bg-indigo-500/10' : 'border-dd-border bg-dd-elevated/50'
+            }`}
+          >
+            <Text className={`text-base font-medium ${appTheme === 'dark' ? 'text-indigo-400' : 'text-slate-200'}`}>
+              Escuro
+            </Text>
+            <Text className="mt-0.5 text-xs text-slate-400">Tema escuro padrão</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setAppTheme('light')}
+            className={`flex-1 rounded-xl border px-4 py-3 ${
+              appTheme === 'light' ? 'border-indigo-500 bg-indigo-500/10' : 'border-dd-border bg-dd-elevated/50'
+            }`}
+          >
+            <Text className={`text-base font-medium ${appTheme === 'light' ? 'text-indigo-400' : 'text-slate-200'}`}>
+              Claro
+            </Text>
+            <Text className="mt-0.5 text-xs text-slate-400">Tema claro</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* Transcription Provider Section */}
-      <View className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-5">
+      <View className="mb-6 rounded-2xl border border-dd-border bg-dd-surface px-4 py-5">
         <Text className="text-lg font-semibold text-slate-100">Provedor de Transcrição</Text>
         <Text className="mt-1 text-sm text-slate-400">
           Escolha onde o áudio será processado por padrão.
@@ -114,9 +161,31 @@ export function SettingsScreen() {
         ))}
       </View>
 
+      {/* Summary / AI Provider Section */}
+      <View className="mb-6 rounded-2xl border border-dd-border bg-dd-surface px-4 py-5">
+        <Text className="text-lg font-semibold text-slate-100">Provedor de Resumo</Text>
+        <Text className="mt-1 text-sm text-slate-400">
+          Escolha qual modelo de IA gera os resumos das reuniões.
+        </Text>
+        {SUMMARY_PROVIDER_OPTIONS.map((option) => (
+          <RadioOption
+            key={option.value}
+            value={option.value}
+            selected={summaryProvider === option.value}
+            label={option.label}
+            description={option.description}
+            onSelect={setSummaryProvider}
+          />
+        ))}
+        <Text className="mt-3 text-xs text-slate-500">
+          O celular não executa IA localmente. Todas as chamadas de resumo são
+          processadas pelo backend do DecisionDesk.
+        </Text>
+      </View>
+
       {/* Whisper Model Section (only for local providers) */}
       {(transcription.defaultProvider === 'desktop_local' || transcription.defaultProvider === 'server_local') && (
-        <View className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-5">
+        <View className="mb-6 rounded-2xl border border-dd-border bg-dd-surface px-4 py-5">
           <Text className="text-lg font-semibold text-slate-100">Modelo Whisper</Text>
           <Text className="mt-1 text-sm text-slate-400">
             Modelos maiores são mais precisos, mas mais lentos.
@@ -136,7 +205,7 @@ export function SettingsScreen() {
 
       {/* Speaker Diarization (only for local providers) */}
       {(transcription.defaultProvider === 'desktop_local' || transcription.defaultProvider === 'server_local') && (
-        <View className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-5">
+        <View className="mb-6 rounded-2xl border border-dd-border bg-dd-surface px-4 py-5">
           <View className="flex-row items-center justify-between">
             <View className="mr-4 flex-1">
               <Text className="text-base font-semibold text-slate-100">Identificar Falantes</Text>
@@ -147,15 +216,15 @@ export function SettingsScreen() {
             <Switch
               value={transcription.enableDiarization}
               onValueChange={handleDiarizationToggle}
-              thumbColor={transcription.enableDiarization ? '#34d399' : '#1e293b'}
-              trackColor={{ false: '#1e293b', true: '#14532d' }}
+              thumbColor={transcription.enableDiarization ? '#818cf8' : '#1e293b'}
+              trackColor={{ false: '#1e293b', true: '#312e81' }}
             />
           </View>
         </View>
       )}
 
       {/* Network Section */}
-      <View className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-5">
+      <View className="rounded-2xl border border-dd-border bg-dd-surface px-4 py-5">
         <View className="flex-row items-center justify-between">
           <View className="mr-4 flex-1">
             <Text className="text-base font-semibold text-slate-100">Permitir dados celulares</Text>
@@ -167,17 +236,17 @@ export function SettingsScreen() {
             value={allowCellular}
             onValueChange={handleCellularToggle}
             disabled={isUpdating}
-            thumbColor={allowCellular ? '#34d399' : '#1e293b'}
-            trackColor={{ false: '#1e293b', true: '#14532d' }}
+            thumbColor={allowCellular ? '#818cf8' : '#1e293b'}
+            trackColor={{ false: '#1e293b', true: '#312e81' }}
           />
         </View>
       </View>
 
       {/* Info Banner for Local */}
       {transcription.defaultProvider === 'desktop_local' && (
-        <View className="mt-6 rounded-xl border border-emerald-900 bg-emerald-950/30 px-4 py-3">
-          <Text className="text-sm font-medium text-emerald-400">Modo Local Ativado</Text>
-          <Text className="mt-1 text-xs text-emerald-300/70">
+        <View className="mt-6 rounded-xl border border-indigo-900 bg-indigo-950/30 px-4 py-3">
+          <Text className="text-sm font-medium text-indigo-400">Modo Local Ativado</Text>
+          <Text className="mt-1 text-xs text-indigo-300/70">
             O áudio será enviado para a fila do Mac Desktop. Abra o app desktop para processar as transcrições localmente com whisper.cpp.
           </Text>
         </View>

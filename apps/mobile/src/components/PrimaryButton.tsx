@@ -13,7 +13,7 @@ interface PrimaryButtonProps {
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: 'bg-emerald-500',
+  primary: 'bg-indigo-500',
   secondary: 'bg-slate-700',
   danger: 'bg-rose-500'
 };

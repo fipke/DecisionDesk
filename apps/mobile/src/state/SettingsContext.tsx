@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
-import { TranscriptionProvider, TranscriptionSettings, WhisperModel } from '../types';
+import { SummaryProvider, TranscriptionProvider, TranscriptionSettings, WhisperModel } from '../types';
 
 interface SettingsState {
   allowCellular: boolean;
@@ -10,6 +10,8 @@ interface SettingsState {
   setTranscriptionProvider: (provider: TranscriptionProvider) => Promise<void>;
   setWhisperModel: (model: WhisperModel) => Promise<void>;
   setEnableDiarization: (enabled: boolean) => Promise<void>;
+  summaryProvider: SummaryProvider;
+  setSummaryProvider: (provider: SummaryProvider) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsState | undefined>(undefined);
@@ -18,7 +20,8 @@ const STORAGE_KEYS = {
   allowCellular: 'settings:allowCellular',
   transcriptionProvider: 'settings:transcriptionProvider',
   whisperModel: 'settings:whisperModel',
-  enableDiarization: 'settings:enableDiarization'
+  enableDiarization: 'settings:enableDiarization',
+  summaryProvider: 'settings:summaryProvider'
 };
 
 // Default settings: local transcription with large-v3 model
@@ -29,16 +32,18 @@ const DEFAULT_TRANSCRIPTION: TranscriptionSettings = {
 };
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [allowCellular, setAllowCellularState] = useState(false);
+  const [allowCellular, setAllowCellularState] = useState(true); // Default to true - most users have good data plans
   const [transcription, setTranscription] = useState<TranscriptionSettings>(DEFAULT_TRANSCRIPTION);
+  const [summaryProvider, setSummaryProviderState] = useState<SummaryProvider>('ollama');
 
   useEffect(() => {
     const loadSettings = async () => {
-      const [cellular, provider, model, diarization] = await Promise.all([
+      const [cellular, provider, model, diarization, summary] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.allowCellular),
         AsyncStorage.getItem(STORAGE_KEYS.transcriptionProvider),
         AsyncStorage.getItem(STORAGE_KEYS.whisperModel),
-        AsyncStorage.getItem(STORAGE_KEYS.enableDiarization)
+        AsyncStorage.getItem(STORAGE_KEYS.enableDiarization),
+        AsyncStorage.getItem(STORAGE_KEYS.summaryProvider)
       ]);
 
       if (cellular !== null) {
@@ -50,6 +55,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         defaultModel: (model as WhisperModel) || DEFAULT_TRANSCRIPTION.defaultModel,
         enableDiarization: diarization !== null ? diarization === 'true' : DEFAULT_TRANSCRIPTION.enableDiarization
       });
+
+      if (summary !== null) {
+        setSummaryProviderState(summary as SummaryProvider);
+      }
     };
 
     loadSettings();
@@ -75,6 +84,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(STORAGE_KEYS.enableDiarization, enabled ? 'true' : 'false');
   };
 
+  const setSummaryProvider = async (provider: SummaryProvider) => {
+    setSummaryProviderState(provider);
+    await AsyncStorage.setItem(STORAGE_KEYS.summaryProvider, provider);
+  };
+
   const value = useMemo(
     () => ({
       allowCellular,
@@ -82,9 +96,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       transcription,
       setTranscriptionProvider,
       setWhisperModel,
-      setEnableDiarization
+      setEnableDiarization,
+      summaryProvider,
+      setSummaryProvider
     }),
-    [allowCellular, transcription]
+    [allowCellular, transcription, summaryProvider]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

@@ -49,7 +49,7 @@ export function WaveformView({ isRecording, barCount = 30, height = 56 }: Wavefo
       {animations.map((anim, i) => (
         <Animated.View
           key={i}
-          className="w-[3px] rounded-full bg-emerald-400"
+          className="w-[3px] rounded-full bg-indigo-400"
           style={{ height: height, transform: [{ scaleY: anim }] }}
         />
       ))}

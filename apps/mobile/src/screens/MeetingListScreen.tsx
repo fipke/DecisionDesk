@@ -50,13 +50,15 @@ function toCardMeeting(m: Meeting) {
     title: m.title ?? undefined,
     costBrl: m.costBrl ?? undefined,
     costUsd: m.costUsd ?? undefined,
+    durationSec: m.durationSec ?? (m.minutes != null && m.minutes > 0 ? m.minutes * 60 : undefined),
+    meetingTypeName: (m as any).meetingTypeName ?? undefined,
   };
 }
 
 export type MeetingListScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
-  const { meetings, loading, syncPendingOperations } = useMeetings();
+  const { meetings, loading, syncError, syncPendingOperations } = useMeetings();
   const { allowCellular } = useSettings();
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -119,19 +121,25 @@ export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
   }, [syncPendingOperations]);
 
   return (
-    <View className="flex-1 bg-slate-950">
+    <View className="flex-1 bg-dd-base">
+      {syncError && (
+        <View className="mx-4 mt-2 rounded-lg bg-red-900/60 px-3 py-2">
+          <Text className="text-xs text-red-200">{syncError}</Text>
+        </View>
+      )}
+
       <View className="px-4 pt-3 pb-2">
         <SearchBar
           value={search}
           onChangeText={setSearch}
-          placeholder="Buscar reuniões…"
+          placeholder="Buscar gravações…"
         />
       </View>
 
       {meetings.length === 0 && !loading ? (
         <EmptyState
           icon="🎙"
-          title="Nenhuma reunião ainda"
+          title="Nenhuma gravação ainda"
           subtitle="Toque em ⊕ para capturar a próxima conversa."
         />
       ) : (
@@ -140,7 +148,7 @@ export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#34d399" />
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#818cf8" />
           }
           renderSectionHeader={({ section: { title } }) => (
             <Text className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -159,7 +167,7 @@ export function MeetingListScreen({ navigation }: MeetingListScreenProps) {
       {/* FAB */}
       <Pressable
         onPress={() => navigation.navigate('Record')}
-        className="absolute bottom-8 right-5 h-14 w-14 items-center justify-center rounded-full bg-emerald-500 shadow-lg active:bg-emerald-600"
+        className="absolute bottom-8 right-5 h-14 w-14 items-center justify-center rounded-full bg-indigo-500 shadow-lg active:bg-indigo-600"
       >
         <PlusIcon size={26} color="#0f172a" />
       </Pressable>

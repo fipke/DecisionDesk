@@ -9,7 +9,7 @@ export function StatusBadge({ status }: { status: MeetingStatus }) {
   const styles = clsx(base, {
     'bg-slate-700': status === 'PENDING_SYNC' || status === 'NEW',
     'bg-amber-500': status === 'PROCESSING',
-    'bg-emerald-500': status === 'DONE',
+    'bg-indigo-500': status === 'DONE',
     'bg-rose-600': status === 'ERROR'
   });
 

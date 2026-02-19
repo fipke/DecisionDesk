@@ -1,7 +1,9 @@
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { Audio } from 'expo-av';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, Text, View } from 'react-native';
+import { PlayIcon, PauseIcon } from 'react-native-heroicons/solid';
 
 import { AINotesView } from '../components/AINotesView';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -13,6 +15,7 @@ import { TranscribeModal, type TranscribeModalOptions } from '../components/Tran
 import { TranscriptView } from '../components/TranscriptView';
 import { useNetworkGuard } from '../hooks/useNetworkGuard';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import { fetchSummary, fetchTemplates, generateSummary, getAudioUrl, type SummaryTemplate } from '../services/api';
 import { notesService, type ActionItem, type Decision, type MeetingNotes } from '../services/notesService';
 import { useMeetings } from '../state/MeetingContext';
 import { useSettings } from '../state/SettingsContext';
@@ -43,6 +46,92 @@ const TABS: { key: DetailTab; label: string }[] = [
   { key: 'summary', label: 'Resumo' },
 ];
 
+// ─── Audio Player ─────────────────────────────────────────────
+
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toString().padStart(2, '0')}`;
+}
+
+function AudioPlayer({ localUri, remoteId }: { localUri: string | null; remoteId: string | null }) {
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [positionMs, setPositionMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [audioUri, setAudioUri] = useState<string | null>(localUri);
+
+  useEffect(() => {
+    if (!localUri && remoteId) {
+      getAudioUrl(remoteId).then(setAudioUri).catch(() => {});
+    }
+  }, [localUri, remoteId]);
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+
+  const loadAndPlay = async () => {
+    if (!audioUri) return;
+
+    if (!loaded) {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: audioUri },
+          { shouldPlay: true },
+          (status) => {
+            if (status.isLoaded) {
+              setPositionMs(status.positionMillis);
+              setDurationMs(status.durationMillis ?? 0);
+              setIsPlaying(status.isPlaying);
+              if (status.didJustFinish) {
+                setIsPlaying(false);
+                setPositionMs(0);
+              }
+            }
+          }
+        );
+        soundRef.current = sound;
+        setLoaded(true);
+        setIsPlaying(true);
+      } catch {
+        Alert.alert('Erro', 'Não foi possível reproduzir o áudio.');
+      }
+    } else if (soundRef.current) {
+      if (isPlaying) {
+        await soundRef.current.pauseAsync();
+      } else {
+        await soundRef.current.playAsync();
+      }
+    }
+  };
+
+  if (!audioUri) return null;
+
+  return (
+    <View className="mx-4 mt-2 flex-row items-center gap-3 rounded-lg border border-dd-border bg-dd-surface px-3 py-2">
+      <Pressable onPress={loadAndPlay} className="h-8 w-8 items-center justify-center rounded-full bg-indigo-600">
+        {isPlaying ? <PauseIcon size={16} color="#fff" /> : <PlayIcon size={16} color="#fff" />}
+      </Pressable>
+      <View className="flex-1">
+        <View className="h-1 rounded-full bg-dd-elevated">
+          <View
+            className="h-1 rounded-full bg-indigo-500"
+            style={{ width: durationMs > 0 ? `${(positionMs / durationMs) * 100}%` : '0%' }}
+          />
+        </View>
+      </View>
+      <Text className="text-xs text-slate-400">
+        {formatTime(positionMs)}{durationMs > 0 ? ` / ${formatTime(durationMs)}` : ''}
+      </Text>
+    </View>
+  );
+}
+
 export type MeetingDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'MeetingDetail'>;
 
 export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenProps) {
@@ -57,6 +146,10 @@ export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenPr
   const [notes, setNotes] = useState<MeetingNotes>({});
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [templates, setTemplates] = useState<SummaryTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
+  const [summary, setSummary] = useState<{ text: string } | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   const meeting = useMemo(
     () => meetings.find((m) => m.id === route.params.id),
@@ -75,6 +168,21 @@ export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenPr
     notesService.getNotes(id).then(setNotes).catch(() => {});
     notesService.getActionItems(id).then(setActionItems).catch(() => {});
     notesService.getDecisions(id).then(setDecisions).catch(() => {});
+  }, [meeting?.remoteId]);
+
+  useEffect(() => {
+    fetchTemplates()
+      .then((ts) => {
+        setTemplates(ts);
+        const def = ts.find((t) => t.isDefault);
+        if (def) setSelectedTemplateId(def.id);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!meeting?.remoteId) return;
+    fetchSummary(meeting.remoteId).then(setSummary).catch(() => {});
   }, [meeting?.remoteId]);
 
   const transcriptLines: TranscriptLine[] = useMemo(() => {
@@ -121,10 +229,26 @@ export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenPr
     [handleSaveNotes]
   );
 
+  const handleGenerateSummary = useCallback(
+    async (templateId?: string) => {
+      if (!meeting?.remoteId) return;
+      try {
+        setGenerating(true);
+        const result = await generateSummary(meeting.remoteId, templateId);
+        setSummary({ text: result.text });
+      } catch {
+        Alert.alert('Erro', 'Não foi possível gerar o resumo.');
+      } finally {
+        setGenerating(false);
+      }
+    },
+    [meeting?.remoteId]
+  );
+
   if (!meeting) {
     return (
-      <View className="flex-1 items-center justify-center bg-slate-950">
-        <Text className="text-slate-400">Reunião não encontrada.</Text>
+      <View className="flex-1 items-center justify-center bg-dd-base">
+        <Text className="text-slate-400">Gravação não encontrada.</Text>
       </View>
     );
   }
@@ -132,15 +256,29 @@ export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenPr
   const hasTranscript = Boolean(meeting.transcriptText);
 
   return (
-    <View className="flex-1 bg-slate-950">
+    <View className="flex-1 bg-dd-base">
       {/* Header */}
-      <View className="border-b border-slate-800 px-4 pb-3 pt-2">
+      <View className="border-b border-dd-border px-4 pb-3 pt-2">
         <View className="flex-row items-center justify-between">
           <Text className="flex-1 pr-2 text-base font-semibold text-slate-100" numberOfLines={1}>
-            {meeting.title || 'Reunião'}
+            {meeting.title || 'Gravação'}
           </Text>
           <StatusBadge status={meeting.status} />
         </View>
+        <Text className="mt-1 text-xs text-slate-500">
+          {new Date(meeting.createdAt).toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          })}
+          {(() => {
+            const totalSec = meeting.durationSec ?? (meeting.minutes != null && meeting.minutes > 0 ? Math.round(meeting.minutes * 60) : null);
+            if (totalSec == null || totalSec <= 0) return null;
+            const m = Math.floor(totalSec / 60);
+            const s = totalSec % 60;
+            if (m === 0) return ` · ${s}s`;
+            return s > 0 ? ` · ${m}m ${s}s` : ` · ${m} min`;
+          })()}
+        </Text>
         {!hasTranscript && (
           <View className="mt-2">
             <PrimaryButton
@@ -151,6 +289,8 @@ export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenPr
           </View>
         )}
       </View>
+
+      <AudioPlayer localUri={meeting.recordingUri} remoteId={meeting.remoteId} />
 
       <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
 
@@ -181,9 +321,12 @@ export function MeetingDetailScreen({ route, navigation }: MeetingDetailScreenPr
 
       {activeTab === 'summary' && (
         <SummaryView
-          onGenerate={() =>
-            Alert.alert('Em breve', 'Geração de resumo será adicionada.')
-          }
+          summaryMd={summary?.text}
+          isGenerating={generating}
+          templates={templates}
+          selectedTemplateId={selectedTemplateId}
+          onSelectTemplate={setSelectedTemplateId}
+          onGenerate={handleGenerateSummary}
         />
       )}
 

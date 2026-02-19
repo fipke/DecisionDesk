@@ -9,6 +9,8 @@ import { InMeetingNotesPad } from '../components/InMeetingNotesPad';
 import { WaveformView } from '../components/WaveformView';
 import { useNetworkGuard } from '../hooks/useNetworkGuard';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { notesService } from '../services/notesService';
+import { getMeeting, patchMeeting } from '../storage/database';
 import { useMeetings } from '../state/MeetingContext';
 import { useSettings } from '../state/SettingsContext';
 
@@ -56,7 +58,7 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
       if (!permissionResponse || permissionResponse.status !== 'granted') {
         const { status } = await requestPermission();
         if (status !== 'granted') {
-          Alert.alert('Permissão negada', 'Autorize o uso do microfone para gravar suas reuniões.');
+          Alert.alert('Permissão negada', 'Autorize o uso do microfone para gravar.');
           return;
         }
       }
@@ -109,23 +111,41 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
       }
 
       const meetingId = await recordAndQueue(uri);
+
+      // Save recording duration to local DB (minutes column is REAL, store fractional for precision)
+      if (durationMillis > 0) {
+        await patchMeeting(meetingId, { minutes: durationMillis / 60000 });
+      }
+
       try {
         await ensureAllowedConnection();
         await syncPendingOperations();
-      } catch (error) {
+      } catch {
         // Mantém na fila para sincronização futura
       }
 
-      Alert.alert('Gravação salva', 'Sua reunião foi armazenada e será sincronizada assim que possível.');
+      // Save live notes to backend if available
+      if (liveNotes.trim()) {
+        try {
+          const meeting = await getMeeting(meetingId);
+          if (meeting?.remoteId) {
+            await notesService.saveLiveNotes(meeting.remoteId, liveNotes.trim());
+          }
+        } catch {
+          // Notes will need to be saved manually later
+        }
+      }
+
+      Alert.alert('Gravação salva', 'Sua gravação foi armazenada e será sincronizada assim que possível.');
       navigation.replace('MeetingDetail', { id: meetingId });
     } catch (error) {
-      Alert.alert('Erro na gravação', 'Não foi possível salvar a reunião. Tente novamente.');
+      Alert.alert('Erro na gravação', 'Não foi possível salvar a gravação. Tente novamente.');
     } finally {
       setRecording(null);
       setIsPreparing(false);
       setDurationMillis(0);
     }
-  }, [ensureAllowedConnection, navigation, recordAndQueue, recording, syncPendingOperations]);
+  }, [durationMillis, ensureAllowedConnection, liveNotes, navigation, recordAndQueue, recording, syncPendingOperations]);
 
   const handlePrimaryAction = useCallback(() => {
     if (recording) {
@@ -147,11 +167,11 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
   }, [allowCellular]);
 
   return (
-    <View className="flex-1 bg-slate-950 px-6">
+    <View className="flex-1 bg-dd-base px-6">
       {/* Notes FAB — only visible while recording */}
       {!!recording && (
         <Pressable
-          className="absolute right-6 top-14 z-10 h-12 w-12 items-center justify-center rounded-full bg-slate-800"
+          className="absolute right-6 top-14 z-10 h-12 w-12 items-center justify-center rounded-full bg-dd-elevated"
           onPress={() => setNotesVisible(true)}
           accessibilityLabel="Abrir anotações"
         >
@@ -184,7 +204,7 @@ export function RecordScreen({ navigation }: RecordScreenProps) {
       <View className="pb-12">
         <Pressable
           className={`w-full items-center rounded-2xl py-4 ${
-            recording ? 'bg-red-600' : 'bg-emerald-600'
+            recording ? 'bg-red-600' : 'bg-indigo-600'
           } ${isPreparing ? 'opacity-50' : 'opacity-100'}`}
           onPress={handlePrimaryAction}
           disabled={isPreparing}

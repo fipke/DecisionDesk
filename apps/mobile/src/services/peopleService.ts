@@ -22,6 +22,20 @@ export const peopleService = {
     return data;
   },
 
+  async createPerson(payload: { displayName: string; fullName?: string; email?: string; notes?: string }): Promise<Person> {
+    const { data } = await api.post('/people', payload);
+    return data;
+  },
+
+  async updatePerson(id: string, payload: { displayName?: string; fullName?: string; email?: string; notes?: string }): Promise<Person> {
+    const { data } = await api.put(`/people/${id}`, payload);
+    return data;
+  },
+
+  async deletePerson(id: string): Promise<void> {
+    await api.delete(`/people/${id}`);
+  },
+
   async getMeetingPeople(meetingId: string): Promise<MeetingPerson[]> {
     const { data } = await api.get(`/meetings/${meetingId}/people`);
     return data;

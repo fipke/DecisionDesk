@@ -28,11 +28,11 @@ export function AINotesView({
     <ScrollView className="flex-1 px-4 py-3" keyboardShouldPersistTaps="handled">
       {/* Free-form notes editor */}
       <TextInput
-        className="min-h-[120px] rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm leading-relaxed text-slate-300"
+        className="min-h-[120px] rounded-xl border border-dd-border bg-dd-surface px-3 py-3 text-sm leading-relaxed text-slate-300"
         value={liveNotes}
         onChangeText={onNotesChange}
         multiline
-        placeholder="Adicione anotações livres da reunião…"
+        placeholder="Adicione anotações livres da gravação…"
         placeholderTextColor="#475569"
         textAlignVertical="top"
       />
@@ -67,9 +67,9 @@ export function AINotesView({
       <Pressable
         onPress={onGenerateAI}
         disabled={isGenerating}
-        className="mt-6 items-center rounded-xl border border-emerald-800 bg-emerald-950 py-3 active:opacity-70 disabled:opacity-40"
+        className="mt-6 items-center rounded-xl border border-indigo-800 bg-indigo-950 py-3 active:opacity-70 disabled:opacity-40"
       >
-        <Text className="text-sm font-medium text-emerald-400">
+        <Text className="text-sm font-medium text-indigo-400">
           {isGenerating ? 'Gerando…' : 'Gerar notas com IA'}
         </Text>
       </Pressable>

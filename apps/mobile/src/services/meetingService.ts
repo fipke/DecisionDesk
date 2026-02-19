@@ -27,12 +27,17 @@ export async function loadMeetingDetails(remoteId: string) {
   const language = payload.transcript?.language ?? null;
   const whisper = payload.cost?.whisper;
 
+  // Prefer actual duration over billing minutes (cost.whisper.minutes rounds up for billing)
+  const durationSec: number | null = payload.durationSec ?? null;
+  const minutes: number | null = durationSec != null ? Math.round(durationSec / 60) : (payload.minutes ?? null);
+
   return {
     status: payload.status,
     transcriptText: transcript,
     language,
     costUsd: payload.cost?.whisper?.usd ?? payload.cost?.total?.usd ?? null,
     costBrl: payload.cost?.whisper?.brl ?? payload.cost?.total?.brl ?? null,
-    minutes: whisper?.minutes ?? null
+    minutes,
+    durationSec
   };
 }

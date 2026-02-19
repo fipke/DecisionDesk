@@ -49,7 +49,7 @@ export function SummaryView({
               key={t.id}
               onPress={() => onSelectTemplate?.(t.id)}
               className={`rounded-full px-4 py-1.5 ${
-                selectedTemplateId === t.id ? 'bg-emerald-600' : 'bg-slate-800'
+                selectedTemplateId === t.id ? 'bg-indigo-600' : 'bg-dd-elevated'
               }`}
             >
               <Text
@@ -67,7 +67,7 @@ export function SummaryView({
       <Pressable
         onPress={() => onGenerate(selectedTemplateId)}
         disabled={isGenerating}
-        className="rounded-xl bg-emerald-600 px-8 py-3 active:bg-emerald-700 disabled:opacity-50"
+        className="rounded-xl bg-indigo-600 px-8 py-3 active:bg-indigo-700 disabled:opacity-50"
       >
         <Text className="text-sm font-semibold text-white">
           {isGenerating ? 'Gerando…' : 'Gerar Resumo'}

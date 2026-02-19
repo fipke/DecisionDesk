@@ -29,11 +29,11 @@ export function InMeetingNotesPad({ visible, initialValue = '', onSave, onClose 
       onRequestClose={onClose}
     >
       <Pressable className="flex-1 bg-black/50" onPress={onClose} />
-      <View className="rounded-t-3xl border-t border-slate-700 bg-slate-900 px-5 pt-4 pb-10">
+      <View className="rounded-t-3xl border-t border-dd-border bg-dd-surface px-5 pt-4 pb-10">
         <View className="mb-3 flex-row items-center justify-between">
-          <Text className="text-base font-semibold text-slate-100">Anotações da reunião</Text>
+          <Text className="text-base font-semibold text-slate-100">Anotações da gravação</Text>
           <Pressable onPress={handleSave}>
-            <Text className="text-sm font-medium text-emerald-400">Salvar</Text>
+            <Text className="text-sm font-medium text-indigo-400">Salvar</Text>
           </Pressable>
         </View>
         <TextInput

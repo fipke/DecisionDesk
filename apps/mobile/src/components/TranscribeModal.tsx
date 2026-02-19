@@ -63,7 +63,7 @@ export function TranscribeModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View className="flex-1 justify-end bg-black/60">
-        <View className="max-h-[85%] rounded-t-3xl bg-slate-900 px-5 py-6">
+        <View className="max-h-[85%] rounded-t-3xl bg-dd-surface px-5 py-6">
           <Text className="text-center text-xl font-bold text-slate-100">
             Opções de Transcrição
           </Text>
@@ -77,24 +77,24 @@ export function TranscribeModal({
                 onPress={() => setProvider(option.value)}
                 className={`mb-2 rounded-xl border px-4 py-3 ${
                   provider === option.value
-                    ? 'border-emerald-500 bg-emerald-950/40'
-                    : 'border-slate-700 bg-slate-800'
+                    ? 'border-indigo-500 bg-indigo-500/10'
+                    : 'border-dd-border bg-dd-elevated'
                 }`}
               >
                 <View className="flex-row items-center">
                   <View
                     className={`mr-3 h-5 w-5 items-center justify-center rounded-full border-2 ${
-                      provider === option.value ? 'border-emerald-500' : 'border-slate-500'
+                      provider === option.value ? 'border-indigo-500' : 'border-slate-500'
                     }`}
                   >
                     {provider === option.value && (
-                      <View className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      <View className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
                     )}
                   </View>
                   <View className="flex-1">
                     <Text
                       className={`text-base font-medium ${
-                        provider === option.value ? 'text-emerald-400' : 'text-slate-200'
+                        provider === option.value ? 'text-indigo-400' : 'text-slate-200'
                       }`}
                     >
                       {option.label}
@@ -118,13 +118,13 @@ export function TranscribeModal({
                       onPress={() => setModel(option.value)}
                       className={`mb-2 mr-2 rounded-lg border px-3 py-2 ${
                         model === option.value
-                          ? 'border-emerald-500 bg-emerald-950/40'
-                          : 'border-slate-700 bg-slate-800'
+                          ? 'border-indigo-500 bg-indigo-500/10'
+                          : 'border-dd-border bg-dd-elevated'
                       }`}
                     >
                       <Text
                         className={`text-sm ${
-                          model === option.value ? 'text-emerald-400' : 'text-slate-300'
+                          model === option.value ? 'text-indigo-400' : 'text-slate-300'
                         }`}
                       >
                         {option.label}
@@ -134,7 +134,7 @@ export function TranscribeModal({
                 </View>
 
                 {/* Diarization Toggle */}
-                <View className="mt-4 flex-row items-center justify-between rounded-xl border border-slate-700 bg-slate-800 px-4 py-3">
+                <View className="mt-4 flex-row items-center justify-between rounded-xl border border-dd-border bg-dd-elevated px-4 py-3">
                   <View className="flex-1 pr-3">
                     <Text className="text-base font-medium text-slate-200">
                       Identificar Falantes
@@ -146,8 +146,8 @@ export function TranscribeModal({
                   <Switch
                     value={diarization}
                     onValueChange={setDiarization}
-                    thumbColor={diarization ? '#34d399' : '#1e293b'}
-                    trackColor={{ false: '#1e293b', true: '#14532d' }}
+                    thumbColor={diarization ? '#818cf8' : '#1e293b'}
+                    trackColor={{ false: '#1e293b', true: '#312e81' }}
                   />
                 </View>
               </>
@@ -158,13 +158,13 @@ export function TranscribeModal({
           <View className="mt-6 flex-row gap-3">
             <Pressable
               onPress={onCancel}
-              className="flex-1 rounded-xl border border-slate-600 bg-slate-800 py-4"
+              className="flex-1 rounded-xl border border-dd-border bg-dd-elevated py-4"
             >
               <Text className="text-center text-base font-semibold text-slate-300">Cancelar</Text>
             </Pressable>
             <Pressable
               onPress={handleConfirm}
-              className="flex-1 rounded-xl bg-emerald-600 py-4"
+              className="flex-1 rounded-xl bg-indigo-600 py-4"
             >
               <Text className="text-center text-base font-semibold text-white">Transcrever</Text>
             </Pressable>

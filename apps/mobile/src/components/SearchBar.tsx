@@ -10,7 +10,7 @@ interface SearchBarProps {
 
 export function SearchBar({ value, onChangeText, placeholder = 'Buscar…', onClear }: SearchBarProps) {
   return (
-    <View className="flex-row items-center rounded-xl bg-slate-800 px-3 py-2">
+    <View className="flex-row items-center rounded-xl bg-dd-elevated px-3 py-2">
       <MagnifyingGlassIcon size={16} color="#64748b" />
       <TextInput
         className="ml-2 flex-1 text-sm text-slate-200"

@@ -9,6 +9,7 @@ interface Meeting {
   durationSec?: number;
   costBrl?: number;
   costUsd?: number;
+  meetingTypeName?: string;
 }
 
 function fmtDuration(sec: number): string {
@@ -32,6 +33,10 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
 }
 
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 interface MeetingCardProps {
   meeting: Meeting;
   onPress: () => void;
@@ -42,13 +47,14 @@ interface MeetingCardProps {
  */
 export function MeetingCard({ meeting, onPress }: MeetingCardProps) {
   const title = meeting.title || fmtDate(meeting.createdAt);
-  const duration = meeting.durationSec != null ? fmtDuration(meeting.durationSec) : null;
+  const time = fmtTime(meeting.createdAt);
+  const duration = meeting.durationSec != null && meeting.durationSec > 0 ? fmtDuration(meeting.durationSec) : null;
   const cost = fmtCost(meeting.costBrl, meeting.costUsd);
 
   return (
     <Pressable
       onPress={onPress}
-      className="mb-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-4 active:opacity-70"
+      className="mb-3 rounded-2xl border border-dd-border bg-dd-surface px-4 py-4 active:opacity-70"
     >
       <View className="flex-row items-start justify-between">
         <Text
@@ -60,19 +66,26 @@ export function MeetingCard({ meeting, onPress }: MeetingCardProps) {
         <StatusBadge status={meeting.status as any} />
       </View>
 
-      {(duration || cost) ? (
-        <View className="mt-2 flex-row items-center gap-3">
-          {duration ? (
-            <Text className="text-xs text-slate-500">{duration}</Text>
-          ) : null}
-          {duration && cost ? (
+      <View className="mt-2 flex-row items-center gap-3">
+        <Text className="text-xs text-slate-500">{time}</Text>
+        {duration ? (
+          <>
             <Text className="text-xs text-slate-700">·</Text>
-          ) : null}
-          {cost ? (
-            <Text className="text-xs font-medium text-emerald-400">{cost}</Text>
-          ) : null}
-        </View>
-      ) : null}
+            <Text className="text-xs text-slate-500">{duration}</Text>
+          </>
+        ) : null}
+        {cost ? (
+          <>
+            <Text className="text-xs text-slate-700">·</Text>
+            <Text className="text-xs font-medium text-indigo-400">{cost}</Text>
+          </>
+        ) : null}
+        {meeting.meetingTypeName ? (
+          <View className="rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5">
+            <Text className="text-xs text-indigo-400">{meeting.meetingTypeName}</Text>
+          </View>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
