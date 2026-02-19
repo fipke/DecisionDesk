@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell, Notification } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Notification } from 'electron';
 import { join } from 'path';
+import { writeFileSync, mkdirSync, existsSync, createReadStream } from 'fs';
+import { randomUUID } from 'crypto';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import Store from 'electron-store';
 import { WhisperService } from './whisper';
@@ -36,7 +38,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#0f172a', // slate-950
+    backgroundColor: '#0b0e18', // dd-base
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -74,7 +76,8 @@ function initializeServices(): void {
   whisperService = new WhisperService({
     modelsPath: getModelsPath(),
     whisperPath: getWhisperPath(),
-    diarizePath: getDiarizePath()
+    diarizePath: getDiarizePath(),
+    diarizeVenvPython: getDiarizeVenvPython()
   });
 
   // 3. API client
@@ -96,10 +99,19 @@ function initializeServices(): void {
   queueService = new QueueService(apiService, whisperService, {
     onJobReceived: (job) => {
       if (store.get('notificationsEnabled')) {
-        new Notification({
+        const notif = new Notification({
           title: 'Nova Transcrição',
           body: `Meeting ${job.meetingId.slice(0, 8)}... aguardando processamento`
-        }).show();
+        });
+        notif.on('click', () => {
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('navigate', '/queue');
+          }
+        });
+        notif.show();
       }
       mainWindow?.webContents.send('queue:job-received', job);
     },
@@ -125,6 +137,11 @@ function getModelsPath(): string {
 function getDiarizePath(): string {
   if (is.dev) return join(__dirname, '../../resources/scripts/diarize.py');
   return join(process.resourcesPath, 'scripts', 'diarize.py');
+}
+
+function getDiarizeVenvPython(): string {
+  if (is.dev) return join(__dirname, '../../resources/diarize-venv/bin/python');
+  return join(process.resourcesPath, 'diarize-venv', 'bin', 'python');
 }
 
 // ─── IPC Handlers ────────────────────────────────────────────
@@ -162,11 +179,143 @@ function setupIPC(): void {
     connectivityService.setBackendUrl(url);
   });
 
+  ipcMain.handle('api:meetings:list', async () => {
+    try {
+      const data = await apiService.fetchAllMeetings();
+      // Normalize backend response to match local Meeting shape
+      return data.map((m: any) => ({
+        id: m.id,
+        remoteId: m.id,
+        createdAt: m.createdAt,
+        status: m.status,
+        title: m.title ?? null,
+        updatedAt: m.updatedAt ?? null,
+        durationSec: m.durationSec ?? null,
+        minutes: m.minutes ?? null,
+        meetingTypeId: m.meetingTypeId ?? null,
+        meetingTypeName: m.meetingTypeName ?? null,
+      }));
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('api:meetings:get', async (_, id: string) => {
+    try {
+      const remote = await apiService.fetchMeeting(id);
+      // Normalize backend MeetingDetailsResponse to match local Meeting shape
+      return {
+        id: remote.id,
+        remoteId: remote.id,
+        createdAt: remote.createdAt,
+        status: remote.status,
+        title: remote.title ?? null,
+        updatedAt: null,
+        transcriptText: remote.transcriptText ?? remote.transcript?.text ?? null,
+        language: remote.language ?? remote.transcript?.language ?? null,
+        costUsd: remote.cost?.total?.usd ?? null,
+        costBrl: remote.cost?.total?.brl ?? null,
+        durationSec: remote.durationSec ?? null,
+        minutes: remote.minutes ?? null,
+        recordingUri: null,
+        folderId: null,
+        meetingTypeId: null,
+        tags: null,
+      };
+    } catch {
+      return null;
+    }
+  });
+
+  // ── API: Transcription + Reset ──
+  ipcMain.handle('api:meetings:transcribe', (_, meetingId: string, options?: { provider?: string; model?: string; enableDiarization?: boolean }) =>
+    apiService.transcribeMeeting(meetingId, options));
+  ipcMain.handle('api:meetings:reset-status', (_, meetingId: string) =>
+    apiService.resetMeetingStatus(meetingId));
+  ipcMain.handle('api:meetings:audio-url', (_, meetingId: string) =>
+    apiService.getAudioUrl(meetingId));
+  ipcMain.handle('api:meetings:download-audio', (_, meetingId: string) =>
+    apiService.downloadAudio(meetingId, `/api/v1/meetings/${meetingId}/audio`));
+
+  // ── API: Template CRUD ──
+  ipcMain.handle('api:templates:create', (_, payload) => apiService.createTemplateFn(payload));
+  ipcMain.handle('api:templates:update', (_, id: string, payload) => apiService.updateTemplateFn(id, payload));
+  ipcMain.handle('api:templates:delete', (_, id: string) => apiService.deleteTemplate(id));
+  ipcMain.handle('api:templates:set-default', (_, id: string) => apiService.setDefaultTemplate(id));
+
+  // ── API: People CRUD ──
+  ipcMain.handle('api:people:create', (_, payload) => apiService.createPerson(payload));
+  ipcMain.handle('api:people:update', (_, id: string, payload) => apiService.updatePerson(id, payload));
+  ipcMain.handle('api:people:delete', (_, id: string) => apiService.deletePerson(id));
+
+  // ── Recording ──
+  ipcMain.handle('recording:save', async (_, arrayBuffer: ArrayBuffer) => {
+    const recordingsDir = join(app.getPath('userData'), 'recordings');
+    if (!existsSync(recordingsDir)) mkdirSync(recordingsDir, { recursive: true });
+    const id = randomUUID();
+    const filePath = join(recordingsDir, `${id}.webm`);
+    writeFileSync(filePath, Buffer.from(arrayBuffer));
+    return filePath;
+  });
+
+  ipcMain.handle('recording:create-meeting', (_, filePath: string, liveNotes?: string) => {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    // upsertMeeting auto-enqueues sync when enqueueSync=true (default)
+    const meeting = repo.upsertMeeting({
+      id,
+      createdAt: now,
+      status: 'PENDING_SYNC',
+      recordingUri: filePath,
+      title: null,
+      updatedAt: now,
+    });
+
+    // Save live notes as a note block if provided
+    if (liveNotes) {
+      repo.upsertNoteBlock({
+        meetingId: id,
+        blockType: 'paragraph',
+        content: liveNotes,
+      });
+    }
+
+    return meeting;
+  });
+
   // ── Connectivity ──
   ipcMain.handle('connectivity:get-status', () => ({
     online: connectivityService.online,
     backendReachable: connectivityService.backendReachable
   }));
+
+  // ── Import ──
+  ipcMain.handle('import:open-audio-file', async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Importar áudio',
+      filters: [{ name: 'Áudio', extensions: ['mp3', 'wav', 'm4a', 'webm', 'ogg', 'flac', 'aac'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('import:upload-audio', async (_, filePath: string, title?: string) => {
+    const FormData = (await import('form-data')).default;
+    const form = new FormData();
+    form.append('file', createReadStream(filePath));
+    if (title) form.append('title', title);
+    const response = await apiService['client'].post('/api/v1/import/file', form, {
+      headers: form.getHeaders(),
+    });
+    return response.data;
+  });
+
+  ipcMain.handle('import:text', async (_, text: string, title?: string) => {
+    const response = await apiService['client'].post('/api/v1/import/text', { text, title });
+    return response.data;
+  });
 
   // ── Database: Meetings ──
   ipcMain.handle('db:meetings:list', () => repo.listMeetings());
@@ -218,6 +367,12 @@ function setupIPC(): void {
   ipcMain.handle('db:templates:list', () => repo.listTemplates());
   ipcMain.handle('db:templates:upsert', (_, t) => repo.upsertTemplate(t));
   ipcMain.handle('db:templates:delete', (_, id: string) => repo.deleteTemplate(id));
+
+  // ── API: Templates + Summaries ──
+  ipcMain.handle('api:templates:list', () => apiService.fetchTemplates());
+  ipcMain.handle('api:summary:generate', (_, meetingId: string, templateId?: string) =>
+    apiService.generateSummary(meetingId, templateId));
+  ipcMain.handle('api:summary:get', (_, meetingId: string) => apiService.fetchSummary(meetingId));
 
   // ── Sync ──
   ipcMain.handle('db:sync:count', () => repo.syncQueueCount());

@@ -6,6 +6,7 @@ export interface WhisperConfig {
   whisperPath: string;
   modelsPath: string;
   diarizePath?: string; // Path to pyannote diarize.py script
+  diarizeVenvPython?: string; // Path to venv Python binary for diarization
 }
 
 export interface TranscribeOptions {
@@ -41,7 +42,16 @@ export class WhisperService {
   }
 
   isDiarizeAvailable(): boolean {
-    return !!this.config.diarizePath && existsSync(this.config.diarizePath);
+    return !!this.config.diarizePath && existsSync(this.config.diarizePath)
+      && !!this.getDiarizePython();
+  }
+
+  /** Returns the Python binary to use for diarization (venv preferred, fallback to system). */
+  private getDiarizePython(): string | null {
+    if (this.config.diarizeVenvPython && existsSync(this.config.diarizeVenvPython)) {
+      return this.config.diarizeVenvPython;
+    }
+    return null;
   }
 
   getAvailableModels(): string[] {
@@ -84,12 +94,18 @@ export class WhisperService {
       throw new Error(`Audio file not found: ${audioPath}`);
     }
 
+    // whisper-cli only accepts WAV — convert if needed
+    let inputPath = audioPath;
+    if (!audioPath.endsWith('.wav')) {
+      inputPath = await this.convertToWav(audioPath);
+    }
+
     const startTime = Date.now();
     const modelPath = this.getModelPath(options.model);
 
     const args = [
       '-m', modelPath,
-      '-f', audioPath,
+      '-f', inputPath,
       '-l', options.language,
       '-oj', // Output JSON
       '-pp', // Print progress
@@ -112,6 +128,35 @@ export class WhisperService {
 
     result.processingTimeMs = Date.now() - startTime;
     return result;
+  }
+
+  private convertToWav(inputPath: string): Promise<string> {
+    const wavPath = inputPath.replace(/\.[^.]+$/, '.wav');
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', [
+        '-y',            // overwrite
+        '-i', inputPath,
+        '-ar', '16000',  // 16 kHz (whisper expects this)
+        '-ac', '1',      // mono
+        '-c:a', 'pcm_s16le',
+        wavPath
+      ]);
+
+      let stderr = '';
+      ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
+
+      ffmpeg.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`ffmpeg conversion failed (code ${code}): ${stderr.slice(-200)}`));
+          return;
+        }
+        resolve(wavPath);
+      });
+
+      ffmpeg.on('error', (err) => {
+        reject(new Error(`Failed to start ffmpeg: ${err.message}. Install via: brew install ffmpeg`));
+      });
+    });
   }
 
   private runWhisper(args: string[]): Promise<string> {
@@ -145,7 +190,8 @@ export class WhisperService {
 
   private async runDiarization(audioPath: string): Promise<{ segments: Array<{ start: number; end: number; speaker: string }> }> {
     return new Promise((resolve, reject) => {
-      const diarize = spawn('python3', [this.config.diarizePath!, audioPath]);
+      const pythonBin = this.getDiarizePython()!;
+      const diarize = spawn(pythonBin, [this.config.diarizePath!, audioPath]);
       
       let stdout = '';
       let stderr = '';
@@ -203,7 +249,7 @@ export class WhisperService {
     // Try to parse JSON output first
     try {
       const json = JSON.parse(output);
-      
+
       const segments: Segment[] = json.transcription?.map((seg: {
         timestamps: { from: string; to: string };
         text: string;
@@ -216,8 +262,8 @@ export class WhisperService {
       })) || [];
 
       const text = segments.map(s => s.text).join(' ').trim();
-      const durationSeconds = segments.length > 0 
-        ? segments[segments.length - 1].end 
+      const durationSeconds = segments.length > 0
+        ? segments[segments.length - 1].end
         : 0;
 
       return {
@@ -228,20 +274,46 @@ export class WhisperService {
         segments
       };
     } catch {
-      // Fallback: parse plain text output
-      const lines = output.split('\n').filter(line => 
-        !line.startsWith('whisper_') && 
-        !line.startsWith('[') && 
-        !line.startsWith('main:') &&
-        line.trim().length > 0
-      );
+      // Fallback: parse whisper-cli text output
+      // Format: [HH:MM:SS.mmm --> HH:MM:SS.mmm]   text
+      const TIMESTAMP_RE = /^\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.+)$/;
+      const segments: Segment[] = [];
+      const plainLines: string[] = [];
+
+      for (const line of output.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const match = TIMESTAMP_RE.exec(trimmed);
+        if (match) {
+          segments.push({
+            start: this.parseTimestamp(match[1]),
+            end: this.parseTimestamp(match[2]),
+            text: match[3].trim(),
+          });
+        } else if (
+          !trimmed.startsWith('whisper_') &&
+          !trimmed.startsWith('main:') &&
+          !trimmed.startsWith('ggml_')
+        ) {
+          plainLines.push(trimmed);
+        }
+      }
+
+      const text = segments.length > 0
+        ? segments.map(s => s.text).join(' ').trim()
+        : plainLines.join(' ').trim();
+
+      const durationSeconds = segments.length > 0
+        ? segments[segments.length - 1].end
+        : 0;
 
       return {
-        text: lines.join(' ').trim(),
+        text,
         language,
-        durationSeconds: 0,
+        durationSeconds,
         processingTimeMs,
-        segments: undefined
+        segments: segments.length > 0 ? segments : undefined,
       };
     }
   }

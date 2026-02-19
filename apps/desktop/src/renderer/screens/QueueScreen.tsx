@@ -86,7 +86,7 @@ export function QueueScreen() {
           <p className="mt-1 text-sm text-slate-500">{String(error)}</p>
           <button
             onClick={() => refetch()}
-            className="mt-4 rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600"
+            className="mt-4 rounded-lg bg-dd-elevated px-4 py-2 text-sm hover:bg-dd-elevated"
           >
             Tentar novamente
           </button>
@@ -106,7 +106,7 @@ export function QueueScreen() {
         </div>
         <button
           onClick={() => refetch()}
-          className="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+          className="flex items-center gap-2 rounded-lg bg-dd-elevated px-4 py-2 text-sm hover:bg-dd-elevated"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
@@ -118,10 +118,10 @@ export function QueueScreen() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-emerald-400" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-indigo-400" />
         </div>
       ) : !pendingJobs?.length ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 py-16">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-dd-border bg-dd-surface/50 py-16">
           <svg className="h-16 w-16 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
               d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -140,7 +140,7 @@ export function QueueScreen() {
             return (
               <div
                 key={job.meetingId}
-                className="rounded-xl border border-slate-800 bg-slate-900 p-4"
+                className="rounded-xl border border-dd-border bg-dd-surface p-4"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -149,27 +149,27 @@ export function QueueScreen() {
                         {job.meetingId.slice(0, 8)}...
                       </span>
                       {state?.status === 'processing' && (
-                        <span className="flex items-center gap-1 text-xs text-emerald-400">
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                        <span className="flex items-center gap-1 text-xs text-indigo-400">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
                           Processando
                         </span>
                       )}
                       {state?.status === 'completed' && (
-                        <span className="text-xs text-emerald-400">✓ Concluído</span>
+                        <span className="text-xs text-indigo-400">✓ Concluído</span>
                       )}
                       {state?.status === 'failed' && (
                         <span className="text-xs text-red-400">✗ Falhou</span>
                       )}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <span className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-300">
+                      <span className="rounded-md bg-dd-elevated px-2 py-1 text-xs text-slate-300">
                         {job.model}
                       </span>
-                      <span className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-300">
+                      <span className="rounded-md bg-dd-elevated px-2 py-1 text-xs text-slate-300">
                         {job.language}
                       </span>
                       {job.diarization && (
-                        <span className="rounded-md bg-emerald-950/50 px-2 py-1 text-xs text-emerald-400">
+                        <span className="rounded-md bg-indigo-500/10 px-2 py-1 text-xs text-indigo-400">
                           Diarização
                         </span>
                       )}
@@ -184,14 +184,14 @@ export function QueueScreen() {
                       <button
                         onClick={() => handleAcceptAndProcess(job.meetingId)}
                         disabled={processingId !== null}
-                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
                       >
                         Processar
                       </button>
                     )}
                     {isProcessing && (
                       <div className="flex items-center gap-2 px-4 py-2">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-emerald-400" />
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-indigo-400" />
                         <span className="text-sm text-slate-400">Processando...</span>
                       </div>
                     )}

@@ -39,7 +39,7 @@ export function listMeetings(): Meeting[] {
   const db = getDatabase();
   const rows = db.prepare(
     `SELECT id, remote_id, created_at, status, recording_uri,
-            transcript_text, language, cost_usd, cost_brl, minutes,
+            transcript_text, language, cost_usd, cost_brl, minutes, duration_sec,
             folder_id, meeting_type_id, tags, title, updated_at
      FROM meetings ORDER BY datetime(created_at) DESC`
   ).all() as any[];
@@ -51,7 +51,7 @@ export function listMeetingsByFolder(folderId: string): Meeting[] {
   const db = getDatabase();
   const rows = db.prepare(
     `SELECT id, remote_id, created_at, status, recording_uri,
-            transcript_text, language, cost_usd, cost_brl, minutes,
+            transcript_text, language, cost_usd, cost_brl, minutes, duration_sec,
             folder_id, meeting_type_id, tags, title, updated_at
      FROM meetings WHERE folder_id = ? ORDER BY datetime(created_at) DESC`
   ).all(folderId) as any[];
@@ -63,7 +63,7 @@ export function getMeeting(id: string): Meeting | null {
   const db = getDatabase();
   const row = db.prepare(
     `SELECT id, remote_id, created_at, status, recording_uri,
-            transcript_text, language, cost_usd, cost_brl, minutes,
+            transcript_text, language, cost_usd, cost_brl, minutes, duration_sec,
             folder_id, meeting_type_id, tags, title, updated_at
      FROM meetings WHERE id = ?`
   ).get(id) as any | undefined;
@@ -78,8 +78,8 @@ export function upsertMeeting(meeting: Partial<Meeting> & { id?: string }, enque
 
   db.prepare(`
     INSERT INTO meetings (id, remote_id, created_at, status, recording_uri, transcript_text, language,
-                          cost_usd, cost_brl, minutes, folder_id, meeting_type_id, tags, title, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          cost_usd, cost_brl, minutes, duration_sec, folder_id, meeting_type_id, tags, title, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       remote_id = excluded.remote_id,
       status = excluded.status,
@@ -89,6 +89,7 @@ export function upsertMeeting(meeting: Partial<Meeting> & { id?: string }, enque
       cost_usd = excluded.cost_usd,
       cost_brl = excluded.cost_brl,
       minutes = excluded.minutes,
+      duration_sec = excluded.duration_sec,
       folder_id = excluded.folder_id,
       meeting_type_id = excluded.meeting_type_id,
       tags = excluded.tags,
@@ -105,6 +106,7 @@ export function upsertMeeting(meeting: Partial<Meeting> & { id?: string }, enque
     meeting.costUsd ?? null,
     meeting.costBrl ?? null,
     meeting.minutes ?? null,
+    meeting.durationSec ?? null,
     meeting.folderId ?? null,
     meeting.meetingTypeId ?? null,
     meeting.tags ? JSON.stringify(meeting.tags) : '{}',
@@ -140,8 +142,10 @@ function mapMeetingRow(row: any): Meeting {
     costUsd: row.cost_usd ?? null,
     costBrl: row.cost_brl ?? null,
     minutes: row.minutes ?? null,
+    durationSec: row.duration_sec ?? null,
     folderId: row.folder_id ?? null,
     meetingTypeId: row.meeting_type_id ?? null,
+    meetingTypeName: row.meeting_type_name ?? null,
     tags: row.tags ? JSON.parse(row.tags) : {},
     title: row.title ?? null,
     updatedAt: row.updated_at ?? null

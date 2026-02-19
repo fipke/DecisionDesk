@@ -55,11 +55,21 @@ export class ApiService {
   }
 
   async downloadAudio(meetingId: string, audioUrl: string): Promise<string> {
-    const localPath = join(this.downloadDir, `${meetingId}.audio`);
-    
     const response = await this.client.get(audioUrl, {
       responseType: 'stream'
     });
+
+    // Detect extension from Content-Type header
+    const contentType = response.headers['content-type'] ?? '';
+    const extMap: Record<string, string> = {
+      'audio/mp4': '.m4a',
+      'audio/mpeg': '.mp3',
+      'audio/wav': '.wav',
+      'audio/webm': '.webm',
+      'audio/ogg': '.ogg',
+    };
+    const ext = extMap[contentType] ?? '.m4a';
+    const localPath = join(this.downloadDir, `${meetingId}${ext}`);
 
     const writer = createWriteStream(localPath);
     await pipeline(response.data, writer);
@@ -119,11 +129,32 @@ export class ApiService {
   }
 
   async syncTemplate(payload: Record<string, unknown>): Promise<void> {
-    await this.client.put(`/api/v1/templates/${payload.id}`, payload);
+    await this.client.put(`/api/v1/summary-templates/${payload.id}`, payload);
   }
 
   async deleteTemplate(id: string): Promise<void> {
-    await this.client.delete(`/api/v1/templates/${id}`);
+    await this.client.delete(`/api/v1/summary-templates/${id}`);
+  }
+
+  async fetchTemplates(): Promise<any[]> {
+    const response = await this.client.get('/api/v1/summary-templates');
+    return response.data;
+  }
+
+  async generateSummary(meetingId: string, templateId?: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/summarize`, {
+      templateId: templateId ?? null,
+    });
+    return response.data;
+  }
+
+  async fetchSummary(meetingId: string): Promise<any | null> {
+    try {
+      const response = await this.client.get(`/api/v1/meetings/${meetingId}/summary`);
+      return response.data;
+    } catch {
+      return null;
+    }
   }
 
   async syncMeetingPerson(payload: Record<string, unknown>): Promise<void> {
@@ -138,7 +169,56 @@ export class ApiService {
     await this.client.put(`/api/v1/series/${payload.id}`, payload);
   }
 
+  async transcribeMeeting(meetingId: string, options?: { provider?: string; model?: string; enableDiarization?: boolean }): Promise<{ meetingId: string; status: string }> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/transcribe`, options ?? {});
+    return response.data;
+  }
+
+  async resetMeetingStatus(meetingId: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/reset-status`);
+    return response.data;
+  }
+
+  async getAudioUrl(meetingId: string): Promise<string> {
+    return `${this.client.defaults.baseURL}/api/v1/meetings/${meetingId}/audio`;
+  }
+
+  async createTemplateFn(payload: Record<string, unknown>): Promise<any> {
+    const response = await this.client.post('/api/v1/summary-templates', payload);
+    return response.data;
+  }
+
+  async updateTemplateFn(id: string, payload: Record<string, unknown>): Promise<any> {
+    const response = await this.client.put(`/api/v1/summary-templates/${id}`, payload);
+    return response.data;
+  }
+
+  async setDefaultTemplate(id: string): Promise<void> {
+    await this.client.post(`/api/v1/summary-templates/${id}/set-default`);
+  }
+
+  async createPerson(payload: Record<string, unknown>): Promise<any> {
+    const response = await this.client.post('/api/v1/people', payload);
+    return response.data;
+  }
+
+  async updatePerson(id: string, payload: Record<string, unknown>): Promise<any> {
+    const response = await this.client.put(`/api/v1/people/${id}`, payload);
+    return response.data;
+  }
+
   // ─── Pull from backend (Phase 2 full sync) ──────────────────
+
+  async fetchMeeting(id: string): Promise<any> {
+    const response = await this.client.get(`/api/v1/meetings/${id}`);
+    const data = response.data;
+    // Flatten nested backend response to match local Meeting shape
+    return {
+      ...data,
+      transcriptText: data.transcript?.text ?? data.transcriptText ?? null,
+      language: data.transcript?.language ?? data.language ?? null,
+    };
+  }
 
   async fetchAllMeetings(): Promise<any[]> {
     const response = await this.client.get('/api/v1/meetings');
