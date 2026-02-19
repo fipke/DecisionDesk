@@ -36,6 +36,31 @@ export interface ElectronAPI {
   };
   api: {
     setUrl: (url: string) => Promise<void>;
+    fetchMeetings: () => Promise<Meeting[]>;
+    fetchMeeting: (id: string) => Promise<any>;
+    fetchTemplates: () => Promise<{ id: string; name: string; isDefault: boolean; description?: string; systemPrompt?: string; userPromptTemplate?: string; model?: string; maxTokens?: number; temperature?: number; outputFormat?: string }[]>;
+    generateSummary: (meetingId: string, templateId?: string) => Promise<{ id: string; text: string; model?: string; tokensUsed?: number }>;
+    fetchSummary: (meetingId: string) => Promise<{ id: string; text: string } | null>;
+    transcribeMeeting: (meetingId: string, options?: { provider?: string; model?: string; enableDiarization?: boolean }) => Promise<{ meetingId: string; status: string }>;
+    resetMeetingStatus: (meetingId: string) => Promise<any>;
+    getAudioUrl: (meetingId: string) => Promise<string>;
+    downloadAudio: (meetingId: string) => Promise<string>;
+    createTemplate: (payload: Record<string, unknown>) => Promise<any>;
+    updateTemplate: (id: string, payload: Record<string, unknown>) => Promise<any>;
+    deleteTemplate: (id: string) => Promise<void>;
+    setDefaultTemplate: (id: string) => Promise<void>;
+    createPerson: (payload: Record<string, unknown>) => Promise<any>;
+    updatePerson: (id: string, payload: Record<string, unknown>) => Promise<any>;
+    deletePerson: (id: string) => Promise<void>;
+  };
+  recording: {
+    save: (arrayBuffer: ArrayBuffer) => Promise<string>;
+    createMeeting: (filePath: string, liveNotes?: string) => Promise<Meeting>;
+  };
+  import: {
+    openAudioFile: () => Promise<string | null>;
+    uploadAudio: (filePath: string, title?: string) => Promise<{ meetingId: string; transcriptLength: number }>;
+    text: (text: string, title?: string) => Promise<{ meetingId: string; transcriptLength: number }>;
   };
 
   // ─── Local database (offline-first) ──────────────────────
@@ -101,6 +126,9 @@ export interface ElectronAPI {
     getStatus: () => Promise<{ online: boolean; backendReachable: boolean }>;
     onStatusChange: (callback: (status: { online: boolean; backendReachable: boolean }) => void) => void;
   };
+
+  // ─── Navigation (from main process) ────────────────────
+  onNavigate: (callback: (path: string) => void) => void;
 }
 
 // ─── Implementation ──────────────────────────────────────────
@@ -123,7 +151,32 @@ const electronAPI: ElectronAPI = {
     transcribe: (audioPath, options) => ipcRenderer.invoke('whisper:transcribe', audioPath, options)
   },
   api: {
-    setUrl: (url) => ipcRenderer.invoke('api:set-url', url)
+    setUrl: (url) => ipcRenderer.invoke('api:set-url', url),
+    fetchMeetings: () => ipcRenderer.invoke('api:meetings:list'),
+    fetchMeeting: (id) => ipcRenderer.invoke('api:meetings:get', id),
+    fetchTemplates: () => ipcRenderer.invoke('api:templates:list'),
+    generateSummary: (meetingId, templateId) => ipcRenderer.invoke('api:summary:generate', meetingId, templateId),
+    fetchSummary: (meetingId) => ipcRenderer.invoke('api:summary:get', meetingId),
+    transcribeMeeting: (meetingId, options) => ipcRenderer.invoke('api:meetings:transcribe', meetingId, options),
+    resetMeetingStatus: (meetingId) => ipcRenderer.invoke('api:meetings:reset-status', meetingId),
+    getAudioUrl: (meetingId) => ipcRenderer.invoke('api:meetings:audio-url', meetingId),
+    downloadAudio: (meetingId) => ipcRenderer.invoke('api:meetings:download-audio', meetingId),
+    createTemplate: (payload) => ipcRenderer.invoke('api:templates:create', payload),
+    updateTemplate: (id, payload) => ipcRenderer.invoke('api:templates:update', id, payload),
+    deleteTemplate: (id) => ipcRenderer.invoke('api:templates:delete', id),
+    setDefaultTemplate: (id) => ipcRenderer.invoke('api:templates:set-default', id),
+    createPerson: (payload) => ipcRenderer.invoke('api:people:create', payload),
+    updatePerson: (id, payload) => ipcRenderer.invoke('api:people:update', id, payload),
+    deletePerson: (id) => ipcRenderer.invoke('api:people:delete', id),
+  },
+  recording: {
+    save: (arrayBuffer) => ipcRenderer.invoke('recording:save', arrayBuffer),
+    createMeeting: (filePath, liveNotes) => ipcRenderer.invoke('recording:create-meeting', filePath, liveNotes),
+  },
+  import: {
+    openAudioFile: () => ipcRenderer.invoke('import:open-audio-file'),
+    uploadAudio: (filePath, title) => ipcRenderer.invoke('import:upload-audio', filePath, title),
+    text: (text, title) => ipcRenderer.invoke('import:text', text, title),
   },
 
   // ─── db namespace ────────────────────────────────────────
@@ -190,7 +243,9 @@ const electronAPI: ElectronAPI = {
     getStatus: () => ipcRenderer.invoke('connectivity:get-status'),
     onStatusChange: (cb) =>
       ipcRenderer.on('connectivity:status-changed', (_, status) => cb(status))
-  }
+  },
+
+  onNavigate: (cb) => ipcRenderer.on('navigate', (_, path) => cb(path))
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

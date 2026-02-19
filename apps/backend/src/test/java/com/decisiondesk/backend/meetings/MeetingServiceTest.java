@@ -45,6 +45,8 @@ class MeetingServiceTest {
     @Mock
     private AudioStorageService storageService;
     @Mock
+    private AudioDurationExtractor durationExtractor;
+    @Mock
     private MeetingCostAggregator costAggregator;
     @Mock
     private TranscriptionOperations transcriptionService;
@@ -65,6 +67,7 @@ class MeetingServiceTest {
                 summaryRepository,
                 usageRecordRepository,
                 storageService,
+                durationExtractor,
                 costAggregator,
                 appProps,
                 transcriptionService);

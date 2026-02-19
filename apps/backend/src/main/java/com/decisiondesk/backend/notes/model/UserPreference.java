@@ -11,12 +11,13 @@ public record UserPreference(
     String userId,
     String defaultLanguage,
     String notesTemplate,
+    String aiConfig,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt
 ) {
-    
+
     public static final String DEFAULT_LANGUAGE = "en";
-    
+
     /**
      * Creates a new user preference with default language.
      */
@@ -26,11 +27,12 @@ public record UserPreference(
             userId,
             DEFAULT_LANGUAGE,
             null,
+            null,
             OffsetDateTime.now(),
             OffsetDateTime.now()
         );
     }
-    
+
     /**
      * Creates a new user preference with specified language.
      */
@@ -40,16 +42,21 @@ public record UserPreference(
             userId,
             language,
             null,
+            null,
             OffsetDateTime.now(),
             OffsetDateTime.now()
         );
     }
-    
+
     public UserPreference withLanguage(String newLanguage) {
-        return new UserPreference(id, userId, newLanguage, notesTemplate, createdAt, OffsetDateTime.now());
+        return new UserPreference(id, userId, newLanguage, notesTemplate, aiConfig, createdAt, OffsetDateTime.now());
     }
-    
+
     public UserPreference withNotesTemplate(String newTemplate) {
-        return new UserPreference(id, userId, defaultLanguage, newTemplate, createdAt, OffsetDateTime.now());
+        return new UserPreference(id, userId, defaultLanguage, newTemplate, aiConfig, createdAt, OffsetDateTime.now());
+    }
+
+    public UserPreference withAiConfig(String newAiConfig) {
+        return new UserPreference(id, userId, defaultLanguage, notesTemplate, newAiConfig, createdAt, OffsetDateTime.now());
     }
 }

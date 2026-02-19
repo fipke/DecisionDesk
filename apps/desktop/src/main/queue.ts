@@ -20,6 +20,7 @@ export class QueueService {
   private whisper: WhisperService;
   private callbacks: QueueCallbacks;
   private jobs: Map<string, QueuedJob> = new Map();
+  private seenJobIds: Set<string> = new Set();
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private isProcessing = false;
 
@@ -45,10 +46,19 @@ export class QueueService {
   private async poll(): Promise<void> {
     try {
       const pendingJobs = await this.api.getPendingJobs();
-      
+
       for (const job of pendingJobs) {
-        if (!this.jobs.has(job.meetingId)) {
+        if (!this.seenJobIds.has(job.meetingId) && !this.jobs.has(job.meetingId)) {
+          this.seenJobIds.add(job.meetingId);
           this.callbacks.onJobReceived(job);
+        }
+      }
+
+      // Clean up seenJobIds for jobs no longer pending on the backend
+      const currentIds = new Set(pendingJobs.map(j => j.meetingId));
+      for (const id of this.seenJobIds) {
+        if (!currentIds.has(id) && !this.jobs.has(id)) {
+          this.seenJobIds.delete(id);
         }
       }
     } catch (err) {

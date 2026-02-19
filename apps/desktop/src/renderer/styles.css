@@ -2,7 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar */
+/* ── Theme CSS variables ─────────────────────────────────────────── */
+
+:root {
+  /* Light theme (default) */
+  --dd-base: #f8fafc;
+  --dd-surface: #ffffff;
+  --dd-elevated: #f1f5f9;
+  --dd-border: #e2e8f0;
+  --dd-border-subtle: #f1f5f9;
+  color-scheme: light;
+}
+
+.dark {
+  --dd-base: #0b0e18;
+  --dd-surface: #111627;
+  --dd-elevated: #191f35;
+  --dd-border: #252c42;
+  --dd-border-subtle: #1d2339;
+  color-scheme: dark;
+}
+
+/* ── Light mode text readability overrides ────────────────────────
+   The codebase uses dark-first slate text classes everywhere.
+   Rather than touching every component, we remap the most-used
+   text-slate-* utilities to their inverse (darker) equivalents
+   when dark class is NOT present on <html>.                       */
+
+html:not(.dark) .text-slate-100 {
+  --tw-text-opacity: 1;
+  color: rgb(30 41 59 / var(--tw-text-opacity)); /* slate-800 */
+}
+
+html:not(.dark) .text-slate-200 {
+  --tw-text-opacity: 1;
+  color: rgb(51 65 85 / var(--tw-text-opacity)); /* slate-700 */
+}
+
+html:not(.dark) .text-slate-300 {
+  --tw-text-opacity: 1;
+  color: rgb(71 85 105 / var(--tw-text-opacity)); /* slate-600 */
+}
+
+html:not(.dark) .text-slate-400 {
+  --tw-text-opacity: 1;
+  color: rgb(100 116 139 / var(--tw-text-opacity)); /* slate-500 */
+}
+
+html:not(.dark) .text-slate-500 {
+  --tw-text-opacity: 1;
+  color: rgb(148 163 184 / var(--tw-text-opacity)); /* slate-400 */
+}
+
+/* Light-mode scrollbar */
+html:not(.dark) ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Custom scrollbar (dark mode — default) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
+import com.decisiondesk.backend.ai.AiExtractionService;
 import com.decisiondesk.backend.meetings.MeetingService;
 import com.decisiondesk.backend.meetings.MeetingStatus;
 import com.decisiondesk.backend.meetings.model.AudioUploadResult;
@@ -22,6 +23,7 @@ import com.decisiondesk.backend.meetings.model.Meeting;
 import com.decisiondesk.backend.meetings.model.MeetingCostBreakdown;
 import com.decisiondesk.backend.meetings.model.MeetingDetails;
 import com.decisiondesk.backend.meetings.model.Transcript;
+import com.decisiondesk.backend.meetings.persistence.AudioAssetRepository;
 import com.decisiondesk.backend.summaries.service.SummaryService;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,11 +35,17 @@ class MeetingsControllerTest {
     @Mock
     private SummaryService summaryService;
 
+    @Mock
+    private AudioAssetRepository audioAssetRepository;
+
+    @Mock
+    private AiExtractionService aiExtractionService;
+
     private MeetingsController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new MeetingsController(meetingService, summaryService);
+        controller = new MeetingsController(meetingService, summaryService, audioAssetRepository, aiExtractionService);
     }
 
     @Test
@@ -86,7 +94,7 @@ class MeetingsControllerTest {
                 new MeetingCostBreakdown.WhisperCost(BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE),
                 null,
                 new MeetingCostBreakdown.TotalCost(BigDecimal.ONE, BigDecimal.ONE));
-        MeetingDetails details = new MeetingDetails(meetingId, MeetingStatus.DONE, OffsetDateTime.now(), transcript, null, cost);
+        MeetingDetails details = new MeetingDetails(meetingId, MeetingStatus.DONE, OffsetDateTime.now(), "Test Meeting", transcript, null, cost, 120);
         when(meetingService.getMeeting(meetingId)).thenReturn(details);
 
         MeetingDetailsResponse response = controller.getMeeting(meetingId);

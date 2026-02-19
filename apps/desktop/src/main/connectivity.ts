@@ -52,7 +52,7 @@ export class ConnectivityService extends EventEmitter {
 
     if (this._online) {
       try {
-        const response = await net.fetch(`${this.backendUrl}/health`, {
+        const response = await net.fetch(`${this.backendUrl}/api/v1/health`, {
           method: 'GET',
           signal: AbortSignal.timeout(5_000)
         } as any);

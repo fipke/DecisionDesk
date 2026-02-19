@@ -80,6 +80,24 @@ export async function initializeDatabase() {
     );
   `);
   
+  // Schema migrations: add columns that may be missing from databases created before PR07/PR08.
+  // SQLite does not support ADD COLUMN IF NOT EXISTS, so we catch errors for already-existing columns.
+  const meetingColumnMigrations = [
+    'ALTER TABLE meetings ADD COLUMN folder_id TEXT',
+    'ALTER TABLE meetings ADD COLUMN meeting_type_id TEXT',
+    'ALTER TABLE meetings ADD COLUMN tags TEXT',
+    'ALTER TABLE meetings ADD COLUMN title TEXT',
+    'ALTER TABLE meetings ADD COLUMN updated_at TEXT',
+    'ALTER TABLE meetings ADD COLUMN duration_sec INTEGER',
+  ];
+  for (const sql of meetingColumnMigrations) {
+    try {
+      await db.execAsync(sql);
+    } catch {
+      // Column already exists — safe to ignore
+    }
+  }
+
   // Insert default root folder if not exists
   await db.runAsync(`
     INSERT OR IGNORE INTO folders (id, name, path, parent_id, default_tags, created_at, updated_at, synced)
@@ -92,7 +110,7 @@ export async function listMeetings(): Promise<Meeting[]> {
   const rows = await db.getAllAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
     `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, 
      transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
-     folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     duration_sec as durationSec, folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
      FROM meetings ORDER BY datetime(created_at) DESC`
   );
   return rows.map((row) => ({
@@ -104,6 +122,7 @@ export async function listMeetings(): Promise<Meeting[]> {
     costUsd: row.costUsd ?? null,
     costBrl: row.costBrl ?? null,
     minutes: row.minutes ?? null,
+    durationSec: (row as any).durationSec ?? null,
     folderId: row.folderId ?? null,
     meetingTypeId: row.meetingTypeId ?? null,
     tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
@@ -117,7 +136,7 @@ export async function listMeetingsByFolder(folderId: string): Promise<Meeting[]>
   const rows = await db.getAllAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
     `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, 
      transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
-     folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     duration_sec as durationSec, folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
      FROM meetings WHERE folder_id = ? ORDER BY datetime(created_at) DESC`,
     [folderId]
   );
@@ -130,6 +149,7 @@ export async function listMeetingsByFolder(folderId: string): Promise<Meeting[]>
     costUsd: row.costUsd ?? null,
     costBrl: row.costBrl ?? null,
     minutes: row.minutes ?? null,
+    durationSec: (row as any).durationSec ?? null,
     folderId: row.folderId ?? null,
     meetingTypeId: row.meetingTypeId ?? null,
     tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
@@ -143,7 +163,7 @@ export async function getMeeting(id: string): Promise<Meeting | null> {
   const row = await db.getFirstAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
     `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri, 
      transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
-     folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     duration_sec as durationSec, folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
      FROM meetings WHERE id = ? LIMIT 1`,
     [id]
   );
@@ -159,6 +179,35 @@ export async function getMeeting(id: string): Promise<Meeting | null> {
     costUsd: row.costUsd ?? null,
     costBrl: row.costBrl ?? null,
     minutes: row.minutes ?? null,
+    durationSec: (row as any).durationSec ?? null,
+    folderId: row.folderId ?? null,
+    meetingTypeId: row.meetingTypeId ?? null,
+    tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
+    title: row.title ?? null,
+    updatedAt: row.updatedAt ?? null
+  };
+}
+
+export async function getMeetingByRemoteId(remoteId: string): Promise<Meeting | null> {
+  const db = await dbPromise;
+  const row = await db.getFirstAsync<Meeting & { remote_id: string | null; recording_uri: string | null; folder_id: string | null; meeting_type_id: string | null }>(
+    `SELECT id, remote_id as remoteId, created_at as createdAt, status, recording_uri as recordingUri,
+     transcript_text as transcriptText, language, cost_usd as costUsd, cost_brl as costBrl, minutes,
+     duration_sec as durationSec, folder_id as folderId, meeting_type_id as meetingTypeId, tags, title, updated_at as updatedAt
+     FROM meetings WHERE remote_id = ? LIMIT 1`,
+    [remoteId]
+  );
+  if (!row) return null;
+  return {
+    ...row,
+    remoteId: row.remoteId ?? null,
+    recordingUri: row.recordingUri ?? null,
+    transcriptText: row.transcriptText ?? null,
+    language: row.language ?? null,
+    costUsd: row.costUsd ?? null,
+    costBrl: row.costBrl ?? null,
+    minutes: row.minutes ?? null,
+    durationSec: (row as any).durationSec ?? null,
     folderId: row.folderId ?? null,
     meetingTypeId: row.meetingTypeId ?? null,
     tags: row.tags ? JSON.parse(row.tags as unknown as string) : {},
@@ -170,8 +219,8 @@ export async function getMeeting(id: string): Promise<Meeting | null> {
 export async function upsertMeeting(meeting: Meeting) {
   const db = await dbPromise;
   await db.runAsync(
-    `INSERT INTO meetings (id, remote_id, created_at, status, recording_uri, transcript_text, language, cost_usd, cost_brl, minutes, folder_id, meeting_type_id, tags, title, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO meetings (id, remote_id, created_at, status, recording_uri, transcript_text, language, cost_usd, cost_brl, minutes, duration_sec, folder_id, meeting_type_id, tags, title, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        remote_id = excluded.remote_id,
        created_at = excluded.created_at,
@@ -182,6 +231,7 @@ export async function upsertMeeting(meeting: Meeting) {
        cost_usd = excluded.cost_usd,
        cost_brl = excluded.cost_brl,
        minutes = excluded.minutes,
+       duration_sec = excluded.duration_sec,
        folder_id = excluded.folder_id,
        meeting_type_id = excluded.meeting_type_id,
        tags = excluded.tags,
@@ -199,6 +249,7 @@ export async function upsertMeeting(meeting: Meeting) {
       meeting.costUsd ?? null,
       meeting.costBrl ?? null,
       meeting.minutes ?? null,
+      meeting.durationSec ?? null,
       meeting.folderId ?? null,
       meeting.meetingTypeId ?? null,
       meeting.tags ? JSON.stringify(meeting.tags) : '{}',

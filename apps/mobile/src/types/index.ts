@@ -13,6 +13,13 @@ export type TranscriptionProvider = 'desktop_local' | 'server_local' | 'remote_o
  */
 export type WhisperModel = 'large-v3' | 'medium' | 'small' | 'base' | 'tiny';
 
+/**
+ * Summary/AI provider options (processed server-side)
+ * - ollama: Ollama running on backend server (FREE, private)
+ * - openai: OpenAI GPT API via backend (paid, high quality)
+ */
+export type SummaryProvider = 'ollama' | 'openai';
+
 export interface TranscriptionSettings {
   defaultProvider: TranscriptionProvider;
   defaultModel: WhisperModel;
@@ -87,6 +94,7 @@ export interface Meeting {
   costUsd?: number | null;
   costBrl?: number | null;
   minutes?: number | null;
+  durationSec?: number | null;
   // PR07: Organization fields
   folderId?: string | null;
   meetingTypeId?: string | null;
@@ -105,6 +113,8 @@ export interface MeetingDetailsPayload {
   id: string;
   status: 'NEW' | 'PROCESSING' | 'DONE' | 'ERROR';
   createdAt: string;
+  durationSec?: number | null;
+  minutes?: number | null;
   transcript?: {
     language: string;
     text: string;

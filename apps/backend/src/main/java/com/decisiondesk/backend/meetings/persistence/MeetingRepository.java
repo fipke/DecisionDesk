@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 
 import com.decisiondesk.backend.meetings.MeetingStatus;
 import com.decisiondesk.backend.meetings.model.Meeting;
+import com.decisiondesk.backend.meetings.model.MeetingListItem;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,6 +71,55 @@ public class MeetingRepository {
      * @param folderId folder identifier
      * @return list of meetings in the folder
      */
+    /**
+     * Returns all meetings ordered by creation date (newest first).
+     *
+     * @return list of all meetings
+     */
+    public List<Meeting> findAll() {
+        return jdbcClient.sql(SELECT_FIELDS + " FROM meetings WHERE deleted_at IS NULL ORDER BY created_at DESC")
+                .query(this::mapMeeting)
+                .list();
+    }
+
+    /**
+     * Returns an enriched list of meetings with duration and category info via joins.
+     */
+    public List<MeetingListItem> findAllEnriched() {
+        return jdbcClient.sql("""
+                SELECT m.id, m.status, m.title, m.created_at, m.updated_at,
+                       a.duration_sec,
+                       CAST(a.duration_sec / 60 AS INTEGER) AS minutes,
+                       m.meeting_type_id, mt.name AS meeting_type_name
+                FROM meetings m
+                LEFT JOIN audio_assets a ON a.meeting_id = m.id
+                LEFT JOIN meeting_types mt ON mt.id = m.meeting_type_id
+                WHERE m.deleted_at IS NULL
+                ORDER BY m.created_at DESC
+                """)
+                .query((rs, rowNum) -> new MeetingListItem(
+                        rs.getObject("id", UUID.class),
+                        MeetingStatus.valueOf(rs.getString("status")),
+                        rs.getString("title"),
+                        rs.getObject("created_at", OffsetDateTime.class),
+                        rs.getObject("updated_at", OffsetDateTime.class),
+                        (Integer) rs.getObject("duration_sec"),
+                        (Integer) rs.getObject("minutes"),
+                        rs.getObject("meeting_type_id", UUID.class),
+                        rs.getString("meeting_type_name")
+                ))
+                .list();
+    }
+
+    /**
+     * Soft-deletes a meeting by setting deleted_at.
+     */
+    public int softDelete(UUID id) {
+        return jdbcClient.sql("UPDATE meetings SET deleted_at = NOW(), updated_at = NOW() WHERE id = :id AND deleted_at IS NULL")
+                .param("id", id)
+                .update();
+    }
+
     public List<Meeting> findByFolderId(UUID folderId) {
         return jdbcClient.sql(SELECT_FIELDS + " FROM meetings WHERE folder_id = :folderId ORDER BY created_at DESC")
                 .param("folderId", folderId)

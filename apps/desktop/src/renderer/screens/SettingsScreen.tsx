@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTheme } from '../ThemeContext';
 
 interface Settings {
   apiUrl: string;
@@ -8,6 +9,89 @@ interface Settings {
   autoAcceptJobs: boolean;
   notificationsEnabled: boolean;
 }
+
+// ─── AI Settings types (matches backend REST API) ────────────────────────────
+
+interface AiTaskConfig {
+  provider: string;
+  model: string;
+}
+
+interface AiSettingsConfig {
+  summarization: AiTaskConfig;
+  extraction: AiTaskConfig;
+  chat: AiTaskConfig;
+  openaiEnabled: boolean;
+}
+
+interface AiSettingsResponse {
+  config: AiSettingsConfig;
+  ollamaAvailable: boolean;
+}
+
+interface OllamaModel {
+  name: string;
+  sizeBytes: number;
+  parameterSize: string;
+}
+
+interface OllamaStatus {
+  running: boolean;
+  models: OllamaModel[];
+}
+
+// ─── AI Settings fetch helpers (direct fetch, no IPC) ────────────────────────
+
+const AI_BASE = 'http://localhost:8087/api/v1';
+
+async function fetchAiSettings(): Promise<AiSettingsResponse> {
+  const res = await fetch(`${AI_BASE}/settings/ai`);
+  if (!res.ok) throw new Error(`AI settings fetch failed: ${res.status}`);
+  return res.json();
+}
+
+async function saveAiSettings(config: AiSettingsConfig): Promise<AiSettingsResponse> {
+  const res = await fetch(`${AI_BASE}/settings/ai`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(`AI settings save failed: ${res.status}`);
+  return res.json();
+}
+
+async function fetchOllamaStatus(): Promise<OllamaStatus> {
+  try {
+    const res = await fetch(`${AI_BASE}/ollama/status`);
+    if (!res.ok) return { running: false, models: [] };
+    return res.json();
+  } catch {
+    return { running: false, models: [] };
+  }
+}
+
+async function loadOllamaModel(model: string): Promise<void> {
+  await fetch(`${AI_BASE}/ollama/load`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model }),
+  });
+}
+
+async function unloadOllamaModel(model: string): Promise<void> {
+  await fetch(`${AI_BASE}/ollama/unload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model }),
+  });
+}
+
+/** AI task keys used for per-task provider configuration. */
+const AI_TASKS = [
+  { key: 'summarization' as const, label: 'Resumo' },
+  { key: 'extraction' as const, label: 'Extração' },
+  { key: 'chat' as const, label: 'Chat' },
+];
 
 const MODEL_OPTIONS = [
   { value: 'large-v3', label: 'Large V3', description: '4GB, melhor precisão, ~15x realtime' },
@@ -18,6 +102,7 @@ const MODEL_OPTIONS = [
 ];
 
 export function SettingsScreen() {
+  const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const [localSettings, setLocalSettings] = useState<Settings | null>(null);
 
@@ -45,6 +130,90 @@ export function SettingsScreen() {
     }
   }, [settings]);
 
+  // ─── AI Settings state (fetched directly via REST, not IPC) ─────────────
+  const [aiConfig, setAiConfig] = useState<AiSettingsConfig>({
+    summarization: { provider: 'openai', model: 'gpt-4o' },
+    extraction: { provider: 'openai', model: 'gpt-4o' },
+    chat: { provider: 'openai', model: 'gpt-4o' },
+    openaiEnabled: true,
+  });
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus>({ running: false, models: [] });
+  const [aiLoading, setAiLoading] = useState(true);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSaveSuccess, setAiSaveSuccess] = useState(false);
+  const [ollamaActionLoading, setOllamaActionLoading] = useState<string | null>(null);
+
+  /** Load AI settings + Ollama status from backend. */
+  const refreshAiData = useCallback(async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const [aiRes, ollamaRes] = await Promise.all([
+        fetchAiSettings(),
+        fetchOllamaStatus(),
+      ]);
+      setAiConfig(aiRes.config);
+      setOllamaStatus(ollamaRes);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Erro ao carregar configurações de IA');
+    } finally {
+      setAiLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAiData();
+  }, [refreshAiData]);
+
+  /** Save AI config to backend. */
+  const handleSaveAiSettings = async () => {
+    setAiSaving(true);
+    setAiError(null);
+    setAiSaveSuccess(false);
+    try {
+      const res = await saveAiSettings(aiConfig);
+      setAiConfig(res.config);
+      setAiSaveSuccess(true);
+      setTimeout(() => setAiSaveSuccess(false), 3000);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Erro ao salvar configurações de IA');
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
+  /** Update a single AI task's provider or model. */
+  const handleAiTaskChange = (
+    task: 'summarization' | 'extraction' | 'chat',
+    field: 'provider' | 'model',
+    value: string,
+  ) => {
+    setAiConfig(prev => ({
+      ...prev,
+      [task]: { ...prev[task], [field]: value },
+    }));
+  };
+
+  /** Load or unload an Ollama model. */
+  const handleOllamaModelAction = async (modelName: string, action: 'load' | 'unload') => {
+    setOllamaActionLoading(modelName);
+    try {
+      if (action === 'load') {
+        await loadOllamaModel(modelName);
+      } else {
+        await unloadOllamaModel(modelName);
+      }
+      // Refresh status after action
+      const updated = await fetchOllamaStatus();
+      setOllamaStatus(updated);
+    } catch {
+      // Silently handle — the status will reflect reality on next poll
+    } finally {
+      setOllamaActionLoading(null);
+    }
+  };
+
   const handleChange = (key: keyof Settings, value: unknown) => {
     setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
     updateSettingMutation.mutate({ key, value });
@@ -53,7 +222,7 @@ export function SettingsScreen() {
   if (isLoading || !localSettings) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-emerald-400" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-dd-border border-t-indigo-400" />
       </div>
     );
   }
@@ -68,8 +237,39 @@ export function SettingsScreen() {
       </div>
 
       <div className="space-y-6">
+        {/* Appearance */}
+        <section className="rounded-xl border border-dd-border bg-dd-surface p-5">
+          <h3 className="text-lg font-semibold text-slate-100">Aparência</h3>
+          <p className="mt-1 text-sm text-slate-400">Tema visual do aplicativo</p>
+
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => setTheme('dark')}
+              className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${
+                theme === 'dark'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : 'border-dd-border bg-dd-elevated hover:border-dd-border'
+              }`}
+            >
+              <span className={`font-medium ${theme === 'dark' ? 'text-indigo-400' : 'text-slate-200'}`}>Escuro</span>
+              <p className="mt-0.5 text-xs text-slate-400">Tema escuro padrão</p>
+            </button>
+            <button
+              onClick={() => setTheme('light')}
+              className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${
+                theme === 'light'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : 'border-dd-border bg-dd-elevated hover:border-dd-border'
+              }`}
+            >
+              <span className={`font-medium ${theme === 'light' ? 'text-indigo-400' : 'text-slate-200'}`}>Claro</span>
+              <p className="mt-0.5 text-xs text-slate-400">Tema claro</p>
+            </button>
+          </div>
+        </section>
+
         {/* Server URL */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <section className="rounded-xl border border-dd-border bg-dd-surface p-5">
           <h3 className="text-lg font-semibold text-slate-100">Servidor</h3>
           <p className="mt-1 text-sm text-slate-400">URL do servidor DecisionDesk</p>
           
@@ -78,14 +278,14 @@ export function SettingsScreen() {
               type="url"
               value={localSettings.apiUrl}
               onChange={(e) => handleChange('apiUrl', e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full rounded-lg border border-dd-border bg-dd-elevated px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               placeholder="http://localhost:8080"
             />
           </div>
         </section>
 
         {/* Whisper Model */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <section className="rounded-xl border border-dd-border bg-dd-surface p-5">
           <h3 className="text-lg font-semibold text-slate-100">Modelo Whisper</h3>
           <p className="mt-1 text-sm text-slate-400">
             Modelo padrão para transcrição local
@@ -103,20 +303,20 @@ export function SettingsScreen() {
                   disabled={!isAvailable}
                   className={`w-full rounded-lg border px-4 py-3 text-left transition-colors ${
                     isSelected
-                      ? 'border-emerald-500 bg-emerald-950/30'
+                      ? 'border-indigo-500 bg-indigo-500/10'
                       : isAvailable
-                      ? 'border-slate-700 bg-slate-800 hover:border-slate-600'
-                      : 'border-slate-800 bg-slate-900/50 opacity-50'
+                      ? 'border-dd-border bg-dd-elevated hover:border-dd-border'
+                      : 'border-dd-border bg-dd-surface/50 opacity-50'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`font-medium ${isSelected ? 'text-emerald-400' : 'text-slate-200'}`}>
+                        <span className={`font-medium ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
                           {model.label}
                         </span>
                         {!isAvailable && (
-                          <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-400">
+                          <span className="rounded bg-dd-border px-1.5 py-0.5 text-xs text-slate-400">
                             Não instalado
                           </span>
                         )}
@@ -124,7 +324,7 @@ export function SettingsScreen() {
                       <span className="mt-0.5 text-xs text-slate-400">{model.description}</span>
                     </div>
                     {isSelected && (
-                      <svg className="h-5 w-5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="h-5 w-5 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
                     )}
@@ -136,7 +336,7 @@ export function SettingsScreen() {
         </section>
 
         {/* Processing Options */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <section className="rounded-xl border border-dd-border bg-dd-surface p-5">
           <h3 className="text-lg font-semibold text-slate-100">Opções de Processamento</h3>
           
           <div className="mt-4 space-y-4">
@@ -151,7 +351,7 @@ export function SettingsScreen() {
               <button
                 onClick={() => handleChange('enableDiarization', !localSettings.enableDiarization)}
                 className={`relative h-6 w-11 rounded-full transition-colors ${
-                  localSettings.enableDiarization ? 'bg-emerald-600' : 'bg-slate-700'
+                  localSettings.enableDiarization ? 'bg-indigo-600' : 'bg-dd-border'
                 }`}
               >
                 <span
@@ -173,7 +373,7 @@ export function SettingsScreen() {
               <button
                 onClick={() => handleChange('autoAcceptJobs', !localSettings.autoAcceptJobs)}
                 className={`relative h-6 w-11 rounded-full transition-colors ${
-                  localSettings.autoAcceptJobs ? 'bg-emerald-600' : 'bg-slate-700'
+                  localSettings.autoAcceptJobs ? 'bg-indigo-600' : 'bg-dd-border'
                 }`}
               >
                 <span
@@ -195,7 +395,7 @@ export function SettingsScreen() {
               <button
                 onClick={() => handleChange('notificationsEnabled', !localSettings.notificationsEnabled)}
                 className={`relative h-6 w-11 rounded-full transition-colors ${
-                  localSettings.notificationsEnabled ? 'bg-emerald-600' : 'bg-slate-700'
+                  localSettings.notificationsEnabled ? 'bg-indigo-600' : 'bg-dd-border'
                 }`}
               >
                 <span
@@ -208,8 +408,167 @@ export function SettingsScreen() {
           </div>
         </section>
 
+        {/* IA / Resumos */}
+        <section className="rounded-xl border border-dd-border bg-dd-surface p-5">
+          <h3 className="text-lg font-semibold text-slate-100">IA / Resumos</h3>
+          <p className="mt-1 text-sm text-slate-400">
+            Provedor de IA por tarefa e gerenciamento do Ollama local
+          </p>
+
+          {aiLoading ? (
+            <div className="mt-4 flex items-center gap-2">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-dd-border border-t-indigo-400" />
+              <span className="text-sm text-slate-400">Carregando configurações de IA...</span>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-5">
+              {/* Ollama Status */}
+              <div className="flex items-center gap-2">
+                <div className={`h-2.5 w-2.5 rounded-full ${ollamaStatus.running ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                <span className="text-sm text-slate-300">
+                  {ollamaStatus.running ? 'Ollama rodando' : 'Ollama offline'}
+                </span>
+              </div>
+
+              {/* Error banner */}
+              {aiError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">
+                  {aiError}
+                </div>
+              )}
+
+              {/* Per-task AI provider selectors */}
+              {AI_TASKS.map(({ key, label }) => (
+                <div key={key} className="rounded-lg border border-dd-border bg-dd-elevated p-4">
+                  <span className="font-medium text-slate-200">{label}</span>
+
+                  {/* Radio row */}
+                  <div className="mt-3 flex gap-3">
+                    <button
+                      onClick={() => handleAiTaskChange(key, 'provider', 'ollama')}
+                      className={`flex-1 rounded-lg border px-4 py-2.5 text-left text-sm transition-colors ${
+                        aiConfig[key].provider === 'ollama'
+                          ? 'border-indigo-500 bg-indigo-500/10'
+                          : 'border-dd-border bg-dd-surface hover:border-dd-border'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`h-3.5 w-3.5 rounded-full border-2 ${
+                          aiConfig[key].provider === 'ollama'
+                            ? 'border-indigo-500 bg-indigo-500'
+                            : 'border-slate-500'
+                        }`}>
+                          {aiConfig[key].provider === 'ollama' && (
+                            <div className="mx-auto mt-[3px] h-1.5 w-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <span className={aiConfig[key].provider === 'ollama' ? 'text-indigo-400' : 'text-slate-300'}>
+                          Ollama (Local)
+                        </span>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => handleAiTaskChange(key, 'provider', 'openai')}
+                      className={`flex-1 rounded-lg border px-4 py-2.5 text-left text-sm transition-colors ${
+                        aiConfig[key].provider === 'openai'
+                          ? 'border-indigo-500 bg-indigo-500/10'
+                          : 'border-dd-border bg-dd-surface hover:border-dd-border'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`h-3.5 w-3.5 rounded-full border-2 ${
+                          aiConfig[key].provider === 'openai'
+                            ? 'border-indigo-500 bg-indigo-500'
+                            : 'border-slate-500'
+                        }`}>
+                          {aiConfig[key].provider === 'openai' && (
+                            <div className="mx-auto mt-[3px] h-1.5 w-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <span className={aiConfig[key].provider === 'openai' ? 'text-indigo-400' : 'text-slate-300'}>
+                          OpenAI (Cloud)
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Model text input */}
+                  <input
+                    type="text"
+                    value={aiConfig[key].model}
+                    onChange={(e) => handleAiTaskChange(key, 'model', e.target.value)}
+                    placeholder={aiConfig[key].provider === 'ollama' ? 'ex: llama3:8b' : 'ex: gpt-4o'}
+                    className="mt-3 w-full rounded-lg border border-dd-border bg-dd-surface px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              ))}
+
+              {/* Installed Ollama Models */}
+              <div>
+                <span className="text-sm font-medium text-slate-300">Modelos Ollama Instalados</span>
+                {ollamaStatus.models.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {ollamaStatus.models.map((m) => (
+                      <div
+                        key={m.name}
+                        className="flex items-center justify-between rounded-lg border border-dd-border bg-dd-elevated px-4 py-2.5"
+                      >
+                        <div>
+                          <span className="text-sm font-medium text-slate-200">{m.name}</span>
+                          <span className="ml-2 text-xs text-slate-400">
+                            {m.parameterSize} &middot; {(m.sizeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOllamaModelAction(m.name, 'load')}
+                            disabled={ollamaActionLoading === m.name}
+                            className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                          >
+                            {ollamaActionLoading === m.name ? '...' : 'Carregar'}
+                          </button>
+                          <button
+                            onClick={() => handleOllamaModelAction(m.name, 'unload')}
+                            disabled={ollamaActionLoading === m.name}
+                            className="rounded-md border border-dd-border bg-dd-surface px-3 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-dd-border disabled:opacity-50"
+                          >
+                            {ollamaActionLoading === m.name ? '...' : 'Descarregar'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    {ollamaStatus.running
+                      ? 'Nenhum modelo encontrado no Ollama.'
+                      : 'Ollama offline — inicie o servidor para ver modelos.'}
+                  </p>
+                )}
+              </div>
+
+              {/* Save button */}
+              <button
+                onClick={handleSaveAiSettings}
+                disabled={aiSaving}
+                className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {aiSaving ? 'Salvando...' : 'Salvar Configuração IA'}
+              </button>
+
+              {/* Success feedback */}
+              {aiSaveSuccess && (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-400">
+                  Configuração de IA salva com sucesso!
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* Whisper Status */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <section className="rounded-xl border border-dd-border bg-dd-surface p-5">
           <h3 className="text-lg font-semibold text-slate-100">Status do Whisper</h3>
           
           <div className="mt-4 space-y-3">
@@ -227,7 +586,7 @@ export function SettingsScreen() {
                   {whisperStatus.models.map((model) => (
                     <span
                       key={model}
-                      className="rounded-md bg-slate-800 px-2.5 py-1 text-xs text-slate-300"
+                      className="rounded-md bg-dd-elevated px-2.5 py-1 text-xs text-slate-300"
                     >
                       {model}
                     </span>

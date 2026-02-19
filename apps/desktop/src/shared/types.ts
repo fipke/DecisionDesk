@@ -21,8 +21,10 @@ export interface Meeting {
   costUsd: number | null;
   costBrl: number | null;
   minutes: number | null;
+  durationSec: number | null;
   folderId: string | null;
   meetingTypeId: string | null;
+  meetingTypeName: string | null;
   tags: Record<string, string>;
   title: string | null;
   updatedAt: string | null;

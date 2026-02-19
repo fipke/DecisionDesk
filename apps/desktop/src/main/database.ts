@@ -236,6 +236,10 @@ const MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_queue(created_at);
     `
+  },
+  {
+    name: '011_duration_sec',
+    sql: `ALTER TABLE meetings ADD COLUMN duration_sec INTEGER;`
   }
 ];
 

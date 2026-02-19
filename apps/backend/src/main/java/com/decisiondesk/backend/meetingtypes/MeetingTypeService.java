@@ -21,18 +21,11 @@ public class MeetingTypeService {
         this.meetingTypeRepository = meetingTypeRepository;
     }
 
-    /**
-     * Creates a new meeting type.
-     *
-     * @param name meeting type name
-     * @param description description
-     * @param requiredTags required tags
-     * @param defaultWhisperModel default whisper model
-     * @return the created meeting type
-     */
-    public MeetingType createMeetingType(String name, String description, 
-            Map<String, String> requiredTags, String defaultWhisperModel) {
-        
+    public MeetingType createMeetingType(String name, String description,
+            Map<String, String> requiredTags, String defaultWhisperModel,
+            List<UUID> summaryTemplateIds, Map<String, Object> extractionConfig,
+            String aiProvider, List<UUID> defaultParticipants, String icon, String color) {
+
         MeetingType meetingType = new MeetingType(
             UUID.randomUUID(),
             name,
@@ -40,47 +33,42 @@ public class MeetingTypeService {
             requiredTags != null ? requiredTags : Map.of(),
             defaultWhisperModel,
             null,
+            summaryTemplateIds != null ? summaryTemplateIds : List.of(),
+            extractionConfig != null ? extractionConfig : Map.of("action_items", true, "decisions", true, "deadlines", true),
+            aiProvider != null ? aiProvider : "ollama",
+            defaultParticipants != null ? defaultParticipants : List.of(),
+            icon,
+            color,
             java.time.OffsetDateTime.now()
         );
-        
+
         return meetingTypeRepository.create(meetingType);
     }
 
     /**
-     * Gets a meeting type by id.
-     *
-     * @param id meeting type id
-     * @return the meeting type
-     * @throws MeetingTypeNotFoundException if not found
+     * Backwards-compatible create with original 4 params.
      */
+    public MeetingType createMeetingType(String name, String description,
+            Map<String, String> requiredTags, String defaultWhisperModel) {
+        return createMeetingType(name, description, requiredTags, defaultWhisperModel,
+                null, null, null, null, null, null);
+    }
+
     public MeetingType getMeetingType(UUID id) {
         return meetingTypeRepository.findById(id)
             .orElseThrow(() -> new MeetingTypeNotFoundException(id));
     }
 
-    /**
-     * Gets all meeting types.
-     *
-     * @return list of all meeting types
-     */
     public List<MeetingType> getAllMeetingTypes() {
         return meetingTypeRepository.findAll();
     }
 
-    /**
-     * Updates a meeting type.
-     *
-     * @param id meeting type id
-     * @param name new name (null to keep)
-     * @param description new description (null to keep)
-     * @param requiredTags new required tags (null to keep)
-     * @param defaultWhisperModel new model (null to keep)
-     * @return the updated meeting type
-     */
     public MeetingType updateMeetingType(UUID id, String name, String description,
-            Map<String, String> requiredTags, String defaultWhisperModel) {
+            Map<String, String> requiredTags, String defaultWhisperModel,
+            List<UUID> summaryTemplateIds, Map<String, Object> extractionConfig,
+            String aiProvider, List<UUID> defaultParticipants, String icon, String color) {
         MeetingType existing = getMeetingType(id);
-        
+
         MeetingType updated = new MeetingType(
             existing.id(),
             name != null ? name : existing.name(),
@@ -88,25 +76,32 @@ public class MeetingTypeService {
             requiredTags != null ? requiredTags : existing.requiredTags(),
             defaultWhisperModel != null ? defaultWhisperModel : existing.defaultWhisperModel(),
             existing.summaryTemplateId(),
+            summaryTemplateIds != null ? summaryTemplateIds : existing.summaryTemplateIds(),
+            extractionConfig != null ? extractionConfig : existing.extractionConfig(),
+            aiProvider != null ? aiProvider : existing.aiProvider(),
+            defaultParticipants != null ? defaultParticipants : existing.defaultParticipants(),
+            icon != null ? icon : existing.icon(),
+            color != null ? color : existing.color(),
             existing.createdAt()
         );
-        
+
         meetingTypeRepository.update(updated);
         return meetingTypeRepository.findById(id).orElseThrow();
     }
 
     /**
-     * Deletes a meeting type.
-     *
-     * @param id meeting type id
+     * Backwards-compatible update with original 4 params.
      */
+    public MeetingType updateMeetingType(UUID id, String name, String description,
+            Map<String, String> requiredTags, String defaultWhisperModel) {
+        return updateMeetingType(id, name, description, requiredTags, defaultWhisperModel,
+                null, null, null, null, null, null);
+    }
+
     public void deleteMeetingType(UUID id) {
         meetingTypeRepository.deleteById(id);
     }
 
-    /**
-     * Exception thrown when a meeting type is not found.
-     */
     public static class MeetingTypeNotFoundException extends RuntimeException {
         public MeetingTypeNotFoundException(UUID id) {
             super("Meeting type not found: " + id);

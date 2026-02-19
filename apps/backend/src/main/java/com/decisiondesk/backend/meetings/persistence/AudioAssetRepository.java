@@ -71,6 +71,34 @@ public class AudioAssetRepository {
                 .optional();
     }
 
+    /**
+     * Updates the duration of an existing audio asset.
+     *
+     * @param id          asset identifier
+     * @param durationSec duration in seconds
+     * @return number of rows updated (0 or 1)
+     */
+    public int updateDuration(UUID id, int durationSec) {
+        return jdbcClient.sql("UPDATE audio_assets SET duration_sec = :durationSec WHERE id = :id")
+                .param("durationSec", durationSec)
+                .param("id", id)
+                .update();
+    }
+
+    /**
+     * Returns all audio assets that have no duration recorded yet.
+     */
+    public java.util.List<AudioAsset> findAllWithNullDuration() {
+        return jdbcClient.sql("""
+                        SELECT id, meeting_id, path, codec, sample_rate, size_bytes, duration_sec, created_at
+                        FROM audio_assets
+                        WHERE duration_sec IS NULL
+                        ORDER BY created_at
+                        """)
+                .query(this::mapAsset)
+                .list();
+    }
+
     private AudioAsset mapAsset(ResultSet rs, int rowNum) throws SQLException {
         return new AudioAsset(
                 rs.getObject("id", UUID.class),
