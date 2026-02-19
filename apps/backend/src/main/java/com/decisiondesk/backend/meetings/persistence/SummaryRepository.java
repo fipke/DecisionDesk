@@ -25,8 +25,9 @@ public class SummaryRepository {
 
     public Optional<Summary> findByMeetingId(UUID meetingId) {
         return jdbcClient.sql("""
-                SELECT id, meeting_id, text_md, template_id, model, tokens_used, created_at, updated_at 
+                SELECT id, meeting_id, text_md, template_id, model, tokens_used, created_at, updated_at
                 FROM summaries WHERE meeting_id = :meetingId
+                ORDER BY created_at ASC LIMIT 1
                 """)
                 .param("meetingId", meetingId)
                 .query(this::mapSummary)

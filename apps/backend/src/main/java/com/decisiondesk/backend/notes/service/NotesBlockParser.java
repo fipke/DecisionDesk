@@ -23,7 +23,7 @@ public class NotesBlockParser {
 
     // Pattern to match blocks: --- followed by #TYPE, content, then ---
     private static final Pattern BLOCK_PATTERN = Pattern.compile(
-            "^---\\s*\\n#([A-Za-zÀ-ÿ_\\s]+)\\n(.*?)\\n---",
+            "^---\\s*\\n#([A-Za-zÀ-ÿ_\\s]+)\\n(.*?)\\n?---",
             Pattern.MULTILINE | Pattern.DOTALL
     );
 
@@ -163,7 +163,12 @@ public class NotesBlockParser {
         return type.toUpperCase()
                 .replace(" ", "_")
                 .replace("Ã", "A")
+                .replace("Á", "A")
+                .replace("É", "E")
+                .replace("Í", "I")
+                .replace("Ó", "O")
                 .replace("Õ", "O")
+                .replace("Ú", "U")
                 .replace("Ç", "C");
     }
 

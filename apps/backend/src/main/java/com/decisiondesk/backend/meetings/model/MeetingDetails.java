@@ -12,7 +12,9 @@ public record MeetingDetails(
         UUID id,
         MeetingStatus status,
         OffsetDateTime createdAt,
+        String title,
         Transcript transcript,
         Summary summary,
-        MeetingCostBreakdown cost) {
+        MeetingCostBreakdown cost,
+        Integer durationSec) {
 }

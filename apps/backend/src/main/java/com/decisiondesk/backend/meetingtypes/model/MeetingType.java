@@ -1,12 +1,14 @@
 package com.decisiondesk.backend.meetingtypes.model;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Represents a type/category of meeting with associated defaults.
- * Examples: "Daily Standup", "Sprint Review", "Client Call", "1:1"
+ * Represents a meeting type that acts as a "starter template" — presets that suggest
+ * which summaries to generate, what AI should extract, and how to present the meeting data.
+ * A meeting type is a facilitator, not a limitation.
  */
 public record MeetingType(
     UUID id,
@@ -15,9 +17,15 @@ public record MeetingType(
     Map<String, String> requiredTags,
     String defaultWhisperModel,
     UUID summaryTemplateId,
+    List<UUID> summaryTemplateIds,
+    Map<String, Object> extractionConfig,
+    String aiProvider,
+    List<UUID> defaultParticipants,
+    String icon,
+    String color,
     OffsetDateTime createdAt
 ) {
-    
+
     /**
      * Creates a new meeting type with minimal required fields.
      */
@@ -29,26 +37,29 @@ public record MeetingType(
             Map.of(),
             null,
             null,
+            List.of(),
+            Map.of("action_items", true, "decisions", true, "deadlines", true),
+            "ollama",
+            List.of(),
+            null,
+            null,
             OffsetDateTime.now()
         );
     }
-    
-    /**
-     * Returns a new meeting type with updated name.
-     */
+
     public MeetingType withName(String newName) {
-        return new MeetingType(id, newName, description, requiredTags, defaultWhisperModel, summaryTemplateId, createdAt);
+        return new MeetingType(id, newName, description, requiredTags, defaultWhisperModel, summaryTemplateId, summaryTemplateIds, extractionConfig, aiProvider, defaultParticipants, icon, color, createdAt);
     }
-    
+
     public MeetingType withDescription(String newDescription) {
-        return new MeetingType(id, name, newDescription, requiredTags, defaultWhisperModel, summaryTemplateId, createdAt);
+        return new MeetingType(id, name, newDescription, requiredTags, defaultWhisperModel, summaryTemplateId, summaryTemplateIds, extractionConfig, aiProvider, defaultParticipants, icon, color, createdAt);
     }
-    
+
     public MeetingType withRequiredTags(Map<String, String> tags) {
-        return new MeetingType(id, name, description, tags, defaultWhisperModel, summaryTemplateId, createdAt);
+        return new MeetingType(id, name, description, tags, defaultWhisperModel, summaryTemplateId, summaryTemplateIds, extractionConfig, aiProvider, defaultParticipants, icon, color, createdAt);
     }
-    
+
     public MeetingType withDefaultWhisperModel(String model) {
-        return new MeetingType(id, name, description, requiredTags, model, summaryTemplateId, createdAt);
+        return new MeetingType(id, name, description, requiredTags, model, summaryTemplateId, summaryTemplateIds, extractionConfig, aiProvider, defaultParticipants, icon, color, createdAt);
     }
 }

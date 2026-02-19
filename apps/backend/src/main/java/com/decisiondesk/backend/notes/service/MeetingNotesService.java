@@ -296,6 +296,7 @@ public class MeetingNotesService {
                 userId,
                 language != null ? language : existing.defaultLanguage(),
                 customTemplate != null ? customTemplate : existing.notesTemplate(),
+                existing.aiConfig(),
                 existing.createdAt(),
                 java.time.OffsetDateTime.now()
         );

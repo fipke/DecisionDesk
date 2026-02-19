@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -42,6 +43,7 @@ public class MeetingService {
     private final SummaryRepository summaryRepository;
     private final UsageRecordRepository usageRecordRepository;
     private final AudioStorageService storageService;
+    private final AudioDurationExtractor durationExtractor;
     private final MeetingCostAggregator costAggregator;
     private final AppProps appProps;
     private final TranscriptionOperations transcriptionService;
@@ -52,6 +54,7 @@ public class MeetingService {
                           @Qualifier("meetingsSummaryRepository") SummaryRepository summaryRepository,
                           UsageRecordRepository usageRecordRepository,
                           AudioStorageService storageService,
+                          AudioDurationExtractor durationExtractor,
                           MeetingCostAggregator costAggregator,
                           AppProps appProps,
                           TranscriptionOperations transcriptionService) {
@@ -61,9 +64,24 @@ public class MeetingService {
         this.summaryRepository = summaryRepository;
         this.usageRecordRepository = usageRecordRepository;
         this.storageService = storageService;
+        this.durationExtractor = durationExtractor;
         this.costAggregator = costAggregator;
         this.appProps = appProps;
         this.transcriptionService = transcriptionService;
+    }
+
+    /**
+     * Returns all meetings ordered by creation date (newest first).
+     */
+    public List<Meeting> listMeetings() {
+        return meetingRepository.findAll();
+    }
+
+    /**
+     * Returns enriched meeting list items with duration and category info.
+     */
+    public List<com.decisiondesk.backend.meetings.model.MeetingListItem> listMeetingsEnriched() {
+        return meetingRepository.findAllEnriched();
     }
 
     /**
@@ -71,6 +89,33 @@ public class MeetingService {
      */
     public Meeting createMeeting() {
         return meetingRepository.create();
+    }
+
+    /**
+     * Updates meeting metadata (title, folderId, meetingTypeId, tags).
+     */
+    @Transactional
+    public Meeting updateMeeting(UUID meetingId, String title, UUID folderId, UUID meetingTypeId, Map<String, String> tags) {
+        meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "MEETING_NOT_FOUND", "Meeting %s not found".formatted(meetingId)));
+
+        if (title != null) meetingRepository.updateTitle(meetingId, title);
+        if (folderId != null) meetingRepository.updateFolder(meetingId, folderId);
+        if (meetingTypeId != null) meetingRepository.updateMeetingType(meetingId, meetingTypeId);
+        if (tags != null) meetingRepository.updateTags(meetingId, tags);
+
+        return meetingRepository.findById(meetingId).orElseThrow();
+    }
+
+    /**
+     * Soft-deletes a meeting.
+     */
+    @Transactional
+    public void deleteMeeting(UUID meetingId) {
+        int rows = meetingRepository.softDelete(meetingId);
+        if (rows == 0) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "MEETING_NOT_FOUND", "Meeting %s not found".formatted(meetingId));
+        }
     }
 
     /**
@@ -90,6 +135,9 @@ public class MeetingService {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "UPLOAD_FAILED", "Failed to persist audio file", ex);
         }
 
+        // Extract duration from the audio file itself (ffprobe), independent of transcription
+        Integer durationSec = durationExtractor.extractDurationSec(stored.path());
+
         AudioAsset asset = new AudioAsset(
                 stored.assetId(),
                 meetingId,
@@ -97,7 +145,7 @@ public class MeetingService {
                 inferCodec(stored.originalFilename()),
                 null,
                 stored.sizeBytes(),
-                null,
+                durationSec,
                 OffsetDateTime.now(ZoneOffset.UTC));
         AudioAsset persisted = audioAssetRepository.save(asset);
 
@@ -116,8 +164,11 @@ public class MeetingService {
         Optional<com.decisiondesk.backend.meetings.model.Summary> summary = summaryRepository.findByMeetingId(meetingId);
         List<UsageRecord> usageRecords = usageRecordRepository.findByMeetingId(meetingId);
         MeetingCostBreakdown costBreakdown = costAggregator.aggregate(usageRecords);
+        Integer durationSec = audioAssetRepository.findLatestByMeetingId(meetingId)
+                .map(AudioAsset::durationSec)
+                .orElse(null);
 
-        return new MeetingDetails(meeting.id(), meeting.status(), meeting.createdAt(), transcript.orElse(null), summary.orElse(null), costBreakdown);
+        return new MeetingDetails(meeting.id(), meeting.status(), meeting.createdAt(), meeting.title(), transcript.orElse(null), summary.orElse(null), costBreakdown, durationSec);
     }
 
     /**
@@ -141,6 +192,23 @@ public class MeetingService {
     @Transactional
     public MeetingStatus transcribeMeeting(UUID meetingId, TranscriptionOptions options) {
         return transcriptionService.transcribe(meetingId, options);
+    }
+
+    /**
+     * Resets a stuck PROCESSING or ERROR meeting back to NEW.
+     */
+    @Transactional
+    public Meeting resetStatus(UUID meetingId) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "MEETING_NOT_FOUND", "Meeting %s not found".formatted(meetingId)));
+
+        if (meeting.status() != MeetingStatus.PROCESSING && meeting.status() != MeetingStatus.ERROR) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_STATUS",
+                    "Can only reset meetings in PROCESSING or ERROR status, current: " + meeting.status());
+        }
+
+        meetingRepository.updateStatus(meetingId, MeetingStatus.NEW);
+        return meetingRepository.findById(meetingId).orElseThrow();
     }
 
     private void validateFile(MultipartFile file) {

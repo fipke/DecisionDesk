@@ -145,6 +145,12 @@ public class TranscriptionService implements TranscriptionOperations {
                     OffsetDateTime.now(ZoneOffset.UTC));
             transcriptRepository.upsert(transcript);
 
+            // Persist audio duration discovered by Whisper
+            if (transcription.durationSeconds() != null && transcription.durationSeconds() > 0) {
+                audioAssetRepository.updateDuration(asset.id(),
+                        (int) Math.round(transcription.durationSeconds()));
+            }
+
             WhisperCostEstimate estimate = calculateCost(transcription);
             String usageMeta = buildUsageMeta(TranscriptionProvider.REMOTE_OPENAI, transcription, estimate);
             UsageRecord usageRecord = new UsageRecord(
@@ -197,6 +203,12 @@ public class TranscriptionService implements TranscriptionOperations {
                     result.text(),
                     OffsetDateTime.now(ZoneOffset.UTC));
             transcriptRepository.upsert(transcript);
+
+            // Persist audio duration discovered by local Whisper
+            if (result.durationMinutes() != null && result.durationMinutes().compareTo(BigDecimal.ZERO) > 0) {
+                int secs = result.durationMinutes().multiply(BigDecimal.valueOf(60)).intValue();
+                audioAssetRepository.updateDuration(asset.id(), secs);
+            }
 
             // Local transcription is free - record zero cost
             String usageMeta = buildLocalUsageMeta(TranscriptionProvider.SERVER_LOCAL, options, result);

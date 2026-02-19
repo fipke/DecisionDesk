@@ -13,6 +13,9 @@ public record MeetingDetailsResponse(
         UUID id,
         MeetingStatus status,
         OffsetDateTime createdAt,
+        String title,
+        Integer durationSec,
+        Integer minutes,
         Transcript transcript,
         Summary summary,
         Cost cost) {

@@ -32,7 +32,7 @@ public class HealthController {
      *
      * @return the current health response
      */
-    @GetMapping(version = "v1")
+    @GetMapping
     public HealthResponse getHealth() {
         return new HealthResponse("ok", appProps.version(), OffsetDateTime.now());
     }

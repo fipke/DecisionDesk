@@ -24,7 +24,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 
 /**
- * REST controller for meeting type operations (PR07).
+ * REST controller for meeting type operations.
  */
 @RestController
 @RequestMapping(path = "/api/v1/meeting-types", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -45,7 +45,13 @@ public class MeetingTypesController {
             request.nameOrDefault(),
             request.description(),
             request.requiredTags(),
-            request.defaultWhisperModel()
+            request.defaultWhisperModel(),
+            request.summaryTemplateIds(),
+            request.extractionConfig(),
+            request.aiProvider(),
+            request.defaultParticipants(),
+            request.icon(),
+            request.color()
         );
         return toResponse(meetingType);
     }
@@ -68,7 +74,7 @@ public class MeetingTypesController {
     }
 
     @PutMapping("/{typeId}")
-    @Operation(summary = "Update a meeting type", description = "Updates meeting type name, description, or tags")
+    @Operation(summary = "Update a meeting type", description = "Updates meeting type fields")
     @ApiResponse(responseCode = "200", description = "Meeting type updated", content = @Content(schema = @Schema(implementation = MeetingTypeResponse.class)))
     public MeetingTypeResponse updateMeetingType(@PathVariable UUID typeId, @RequestBody MeetingTypeRequest request) {
         MeetingType meetingType = meetingTypeService.updateMeetingType(
@@ -76,7 +82,13 @@ public class MeetingTypesController {
             request.name(),
             request.description(),
             request.requiredTags(),
-            request.defaultWhisperModel()
+            request.defaultWhisperModel(),
+            request.summaryTemplateIds(),
+            request.extractionConfig(),
+            request.aiProvider(),
+            request.defaultParticipants(),
+            request.icon(),
+            request.color()
         );
         return toResponse(meetingType);
     }
@@ -96,6 +108,12 @@ public class MeetingTypesController {
             meetingType.description(),
             meetingType.requiredTags(),
             meetingType.defaultWhisperModel(),
+            meetingType.summaryTemplateIds(),
+            meetingType.extractionConfig(),
+            meetingType.aiProvider(),
+            meetingType.defaultParticipants(),
+            meetingType.icon(),
+            meetingType.color(),
             meetingType.createdAt()
         );
     }

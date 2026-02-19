@@ -1,6 +1,7 @@
 package com.decisiondesk.backend.summaries.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,12 +12,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.decisiondesk.backend.meetings.model.Meeting;
 import com.decisiondesk.backend.meetings.model.Transcript;
 import com.decisiondesk.backend.meetings.model.UsageRecord;
+import com.decisiondesk.backend.meetings.persistence.MeetingRepository;
 import com.decisiondesk.backend.meetings.persistence.TranscriptRepository;
 import com.decisiondesk.backend.meetings.persistence.UsageRecordRepository;
-import com.decisiondesk.backend.openai.GptClient;
-import com.decisiondesk.backend.openai.GptCompletion;
+import com.decisiondesk.backend.meetingtypes.model.MeetingType;
+import com.decisiondesk.backend.meetingtypes.persistence.MeetingTypeRepository;
+import com.decisiondesk.backend.ai.AiCompletion;
+import com.decisiondesk.backend.ai.AiCompletionProvider;
+import com.decisiondesk.backend.ai.AiProviderRouter;
 import com.decisiondesk.backend.summaries.model.Summary;
 import com.decisiondesk.backend.summaries.model.SummaryTemplate;
 import com.decisiondesk.backend.summaries.persistence.SummaryRepository;
@@ -24,7 +30,8 @@ import com.decisiondesk.backend.summaries.persistence.SummaryTemplateRepository;
 import com.decisiondesk.backend.web.ApiException;
 
 /**
- * Service for generating meeting summaries using GPT.
+ * Service for generating meeting summaries using AI providers (OpenAI / Ollama).
+ * Supports multiple summaries per meeting (one per template).
  */
 @Service
 public class SummaryService {
@@ -36,47 +43,47 @@ public class SummaryService {
     private final SummaryRepository summaryRepository;
     private final SummaryTemplateRepository templateRepository;
     private final UsageRecordRepository usageRecordRepository;
-    private final GptClient gptClient;
+    private final MeetingRepository meetingRepository;
+    private final MeetingTypeRepository meetingTypeRepository;
+    private final AiProviderRouter aiProviderRouter;
 
     public SummaryService(
             TranscriptRepository transcriptRepository,
             @Qualifier("summariesSummaryRepository") SummaryRepository summaryRepository,
             SummaryTemplateRepository templateRepository,
             UsageRecordRepository usageRecordRepository,
-            GptClient gptClient) {
+            MeetingRepository meetingRepository,
+            MeetingTypeRepository meetingTypeRepository,
+            AiProviderRouter aiProviderRouter) {
         this.transcriptRepository = transcriptRepository;
         this.summaryRepository = summaryRepository;
         this.templateRepository = templateRepository;
         this.usageRecordRepository = usageRecordRepository;
-        this.gptClient = gptClient;
+        this.meetingRepository = meetingRepository;
+        this.meetingTypeRepository = meetingTypeRepository;
+        this.aiProviderRouter = aiProviderRouter;
     }
 
     /**
      * Generates a summary for a meeting using the specified template.
      * If no templateId is provided, uses the default template.
-     *
-     * @param meetingId the meeting ID
-     * @param templateId optional template ID (uses default if null)
-     * @return the generated summary
+     * Re-generating with the same template overwrites the previous summary for that template.
      */
     @Transactional
     public Summary generateSummary(UUID meetingId, UUID templateId) {
-        // Get transcript
         Transcript transcript = transcriptRepository.findByMeetingId(meetingId)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
                         "NO_TRANSCRIPT", "Meeting has no transcript to summarize"));
 
-        // Get template
         SummaryTemplate template = resolveTemplate(templateId);
-        
-        log.info("Generating summary for meeting={} using template={}", 
+
+        log.info("Generating summary for meeting={} using template={}",
                 meetingId, template.name());
 
-        // Build prompts
         String userPrompt = template.buildUserPrompt(transcript.text());
-        
-        // Call GPT
-        GptCompletion completion = gptClient.chatCompletion(
+
+        AiCompletionProvider provider = aiProviderRouter.getProvider("openai");
+        AiCompletion completion = provider.chatCompletion(
                 template.systemPrompt(),
                 userPrompt,
                 template.model(),
@@ -84,27 +91,8 @@ public class SummaryService {
                 template.temperature()
         );
 
-        // Calculate costs
-        BigDecimal costUsd = completion.calculateCostUsd();
-        BigDecimal costBrl = costUsd.multiply(USD_TO_BRL);
+        recordUsage(meetingId, template, completion);
 
-        // Save usage record
-        UsageRecord usageRecord = new UsageRecord(
-                UUID.randomUUID(),
-                meetingId,
-                UsageRecord.Service.GPT,
-                new BigDecimal(completion.totalTokens()),
-                costUsd,
-                costBrl,
-                buildUsageMeta(template, completion),
-                null
-        );
-        usageRecordRepository.insert(usageRecord);
-        
-        log.info("GPT usage recorded: meeting={}, tokens={}, costUsd={}", 
-                meetingId, completion.totalTokens(), costUsd);
-
-        // Save summary
         Summary summary = Summary.create(
                 meetingId,
                 completion.content(),
@@ -112,15 +100,115 @@ public class SummaryService {
                 completion.model(),
                 completion.totalTokens()
         );
-        
+
         return summaryRepository.upsert(summary);
     }
 
     /**
-     * Gets the existing summary for a meeting if available.
+     * Generates a summary with optional prompt overrides and save-as-template option.
+     */
+    @Transactional
+    public Summary generateSummary(UUID meetingId, UUID templateId,
+                                    String systemPromptOverride, String userPromptOverride,
+                                    boolean saveAsTemplate, String newTemplateName) {
+        Transcript transcript = transcriptRepository.findByMeetingId(meetingId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
+                        "NO_TRANSCRIPT", "Meeting has no transcript to summarize"));
+
+        SummaryTemplate template = resolveTemplate(templateId);
+
+        String systemPrompt = systemPromptOverride != null ? systemPromptOverride : template.systemPrompt();
+        String userPrompt = userPromptOverride != null ? userPromptOverride : template.buildUserPrompt(transcript.text());
+        if (userPromptOverride == null && systemPromptOverride != null) {
+            userPrompt = template.buildUserPrompt(transcript.text());
+        }
+
+        log.info("Generating summary for meeting={} using template={} (overrides: sys={}, user={})",
+                meetingId, template.name(), systemPromptOverride != null, userPromptOverride != null);
+
+        AiCompletionProvider provider = aiProviderRouter.getProvider("openai");
+        AiCompletion completion = provider.chatCompletion(
+                systemPrompt, userPrompt, template.model(), template.maxTokens(), template.temperature());
+
+        recordUsage(meetingId, template, completion);
+
+        UUID effectiveTemplateId = template.id();
+        if (saveAsTemplate && newTemplateName != null) {
+            SummaryTemplate newTemplate = SummaryTemplate.create(
+                    newTemplateName, systemPrompt, template.userPromptTemplate());
+            templateRepository.create(newTemplate);
+            effectiveTemplateId = newTemplate.id();
+            log.info("Saved new template: id={}, name={}", newTemplate.id(), newTemplateName);
+        }
+
+        Summary summary = Summary.create(meetingId, completion.content(),
+                effectiveTemplateId, completion.model(), completion.totalTokens());
+        return summaryRepository.upsert(summary);
+    }
+
+    /**
+     * Gets the first/oldest summary for a meeting (backwards-compatible).
      */
     public Optional<Summary> getSummary(UUID meetingId) {
         return summaryRepository.findByMeetingId(meetingId);
+    }
+
+    /**
+     * Gets all summaries for a meeting.
+     */
+    public List<Summary> getAllSummaries(UUID meetingId) {
+        return summaryRepository.findAllByMeetingId(meetingId);
+    }
+
+    /**
+     * Generates all summaries configured in the meeting's type.
+     * Runs each template sequentially, skipping failures to avoid blocking others.
+     *
+     * @return list of successfully generated summaries
+     */
+    @Transactional
+    public List<Summary> generateAllForMeetingType(UUID meetingId) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+                        "MEETING_NOT_FOUND", "Meeting not found: " + meetingId));
+
+        if (meeting.meetingTypeId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "NO_MEETING_TYPE", "Meeting has no type assigned");
+        }
+
+        MeetingType meetingType = meetingTypeRepository.findById(meeting.meetingTypeId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+                        "MEETING_TYPE_NOT_FOUND", "Meeting type not found: " + meeting.meetingTypeId()));
+
+        List<UUID> templateIds = meetingType.summaryTemplateIds();
+        if (templateIds == null || templateIds.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "NO_TEMPLATES_CONFIGURED", "Meeting type has no summary templates configured");
+        }
+
+        log.info("Generating {} summaries for meeting={} type={}",
+                templateIds.size(), meetingId, meetingType.name());
+
+        return templateIds.stream()
+                .map(templateId -> {
+                    try {
+                        return generateSummary(meetingId, templateId);
+                    } catch (Exception e) {
+                        log.error("Failed to generate summary for meeting={} template={}: {}",
+                                meetingId, templateId, e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(s -> s != null)
+                .toList();
+    }
+
+    /**
+     * Deletes a specific summary by ID.
+     */
+    public boolean deleteSummary(UUID summaryId) {
+        return summaryRepository.deleteById(summaryId);
     }
 
     private SummaryTemplate resolveTemplate(UUID templateId) {
@@ -134,12 +222,33 @@ public class SummaryService {
                         "NO_DEFAULT_TEMPLATE", "No default summary template configured"));
     }
 
-    private String buildUsageMeta(SummaryTemplate template, GptCompletion completion) {
+    private void recordUsage(UUID meetingId, SummaryTemplate template, AiCompletion completion) {
+        BigDecimal costUsd = completion.calculateCostUsd();
+        BigDecimal costBrl = costUsd.multiply(USD_TO_BRL);
+
+        UsageRecord usageRecord = new UsageRecord(
+                UUID.randomUUID(),
+                meetingId,
+                UsageRecord.Service.GPT,
+                new BigDecimal(completion.totalTokens()),
+                costUsd,
+                costBrl,
+                buildUsageMeta(template, completion),
+                null
+        );
+        usageRecordRepository.insert(usageRecord);
+
+        log.info("AI usage recorded: provider={}, meeting={}, tokens={}, costUsd={}",
+                completion.provider(), meetingId, completion.totalTokens(), costUsd);
+    }
+
+    private String buildUsageMeta(SummaryTemplate template, AiCompletion completion) {
         return String.format(
-                "{\"template_id\":\"%s\",\"template_name\":\"%s\",\"model\":\"%s\",\"prompt_tokens\":%d,\"completion_tokens\":%d}",
+                "{\"template_id\":\"%s\",\"template_name\":\"%s\",\"model\":\"%s\",\"provider\":\"%s\",\"prompt_tokens\":%d,\"completion_tokens\":%d}",
                 template.id(),
                 template.name(),
                 completion.model(),
+                completion.provider(),
                 completion.promptTokens(),
                 completion.completionTokens()
         );
