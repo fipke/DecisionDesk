@@ -234,4 +234,14 @@ export class ApiService {
     const response = await this.client.get('/api/v1/people');
     return response.data;
   }
+
+  async fetchStats(): Promise<{ totalMeetings: number; totalMinutesRecorded: number; pendingProcessing: number; thisWeekCount: number }> {
+    const response = await this.client.get('/api/v1/stats');
+    return response.data;
+  }
+
+  async fetchCalendar(from: string, to: string): Promise<{ day: string; count: number }[]> {
+    const response = await this.client.get('/api/v1/stats/calendar', { params: { from, to } });
+    return response.data;
+  }
 }

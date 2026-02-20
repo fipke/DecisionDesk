@@ -52,6 +52,8 @@ export interface ElectronAPI {
     createPerson: (payload: Record<string, unknown>) => Promise<any>;
     updatePerson: (id: string, payload: Record<string, unknown>) => Promise<any>;
     deletePerson: (id: string) => Promise<void>;
+    fetchStats: () => Promise<{ totalMeetings: number; totalMinutesRecorded: number; pendingProcessing: number; thisWeekCount: number }>;
+    fetchCalendar: (from: string, to: string) => Promise<{ day: string; count: number }[]>;
   };
   recording: {
     save: (arrayBuffer: ArrayBuffer) => Promise<string>;
@@ -168,6 +170,8 @@ const electronAPI: ElectronAPI = {
     createPerson: (payload) => ipcRenderer.invoke('api:people:create', payload),
     updatePerson: (id, payload) => ipcRenderer.invoke('api:people:update', id, payload),
     deletePerson: (id) => ipcRenderer.invoke('api:people:delete', id),
+    fetchStats: () => ipcRenderer.invoke('api:stats:get'),
+    fetchCalendar: (from, to) => ipcRenderer.invoke('api:stats:calendar', from, to),
   },
   recording: {
     save: (arrayBuffer) => ipcRenderer.invoke('recording:save', arrayBuffer),

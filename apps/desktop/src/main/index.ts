@@ -248,6 +248,10 @@ function setupIPC(): void {
   ipcMain.handle('api:people:update', (_, id: string, payload) => apiService.updatePerson(id, payload));
   ipcMain.handle('api:people:delete', (_, id: string) => apiService.deletePerson(id));
 
+  // ── API: Stats (Dashboard) ──
+  ipcMain.handle('api:stats:get', () => apiService.fetchStats());
+  ipcMain.handle('api:stats:calendar', (_, from: string, to: string) => apiService.fetchCalendar(from, to));
+
   // ── Recording ──
   ipcMain.handle('recording:save', async (_, arrayBuffer: ArrayBuffer) => {
     const recordingsDir = join(app.getPath('userData'), 'recordings');

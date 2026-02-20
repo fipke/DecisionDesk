@@ -277,3 +277,27 @@ export async function updateAiSettings(config: any): Promise<any> {
   const response = await api.put('/settings/ai', config);
   return response.data;
 }
+
+// ─── Stats / Dashboard ──────────────────────────────────────────────────
+
+export interface DashboardStats {
+  totalMeetings: number;
+  totalMinutesRecorded: number;
+  pendingProcessing: number;
+  thisWeekCount: number;
+}
+
+export interface CalendarDay {
+  day: string;
+  count: number;
+}
+
+export async function fetchStats(): Promise<DashboardStats> {
+  const { data } = await api.get<DashboardStats>('/stats');
+  return data;
+}
+
+export async function fetchCalendar(from: string, to: string): Promise<CalendarDay[]> {
+  const { data } = await api.get<CalendarDay[]>('/stats/calendar', { params: { from, to } });
+  return data;
+}

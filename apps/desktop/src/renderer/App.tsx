@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { DashboardScreen } from './screens/DashboardScreen';
 import { QueueScreen } from './screens/QueueScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { MeetingsScreen } from './screens/MeetingsScreen';
@@ -60,6 +61,15 @@ function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-3">
+        {/* Dashboard */}
+        <NavLink to="/" end className={navLinkClass}>
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          Dashboard
+        </NavLink>
+
         {/* Gravações */}
         <NavLink to="/meetings" className={navLinkClass}>
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -196,7 +206,7 @@ export function App() {
           <Sidebar />
           <main className="flex-1 overflow-auto">
             <Routes>
-              <Route path="/" element={<Navigate to="/meetings" replace />} />
+              <Route path="/" element={<DashboardScreen />} />
               <Route path="/meetings" element={<MeetingsScreen />} />
               <Route path="/meetings/:id" element={<MeetingDetailScreen />} />
               <Route path="/record" element={<RecordScreen />} />

@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { DashboardScreen } from '../screens/DashboardScreen';
 import { FolderScreen } from '../screens/FolderScreen';
 import { MeetingDetailScreen } from '../screens/MeetingDetailScreen';
 import { MeetingListScreen } from '../screens/MeetingListScreen';
@@ -10,6 +11,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { TemplatesScreen } from '../screens/TemplatesScreen';
 
 export type RootStackParamList = {
+  Dashboard: undefined;
   Home: undefined;
   Record: undefined;
   MeetingDetail: { id: string };
@@ -31,7 +33,8 @@ const screenOptions = {
 
 export function AppNavigator() {
   return (
-    <Stack.Navigator initialRouteName="Home" screenOptions={screenOptions}>
+    <Stack.Navigator initialRouteName="Dashboard" screenOptions={screenOptions}>
+      <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
       <Stack.Screen name="Home" component={MeetingListScreen} options={{ title: 'Gravações' }} />
       <Stack.Screen name="Record" component={RecordScreen} options={{ title: 'Nova gravação' }} />
       <Stack.Screen name="MeetingDetail" component={MeetingDetailScreen} options={{ title: 'Detalhes' }} />

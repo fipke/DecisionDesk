@@ -33,8 +33,11 @@ public class StatsController {
         long totalMeetings = jdbcClient.sql("SELECT COUNT(*) FROM meetings")
                 .query(Long.class).single();
 
-        Long totalMinutes = jdbcClient.sql(
-                        "SELECT COALESCE(SUM(COALESCE(duration_sec, 0)), 0) / 60 FROM meetings")
+        Long totalMinutes = jdbcClient.sql("""
+                        SELECT COALESCE(SUM(COALESCE(a.duration_sec, 0)), 0) / 60
+                        FROM meetings m
+                        LEFT JOIN audio_assets a ON a.meeting_id = m.id
+                        """)
                 .query(Long.class).single();
 
         long pendingActions = jdbcClient.sql(
