@@ -164,14 +164,17 @@ public class MeetingsController {
             @PathVariable UUID meetingId,
             @RequestBody(required = false) SummarizeRequest request) {
         Summary summary;
+        String provider = request != null ? request.provider() : null;
+        String model = request != null ? request.model() : null;
         if (request != null && (request.systemPromptOverride() != null || request.userPromptOverride() != null || Boolean.TRUE.equals(request.saveAsTemplate()))) {
             summary = summaryService.generateSummary(
                     meetingId, request.templateId(),
                     request.systemPromptOverride(), request.userPromptOverride(),
-                    Boolean.TRUE.equals(request.saveAsTemplate()), request.newTemplateName());
+                    Boolean.TRUE.equals(request.saveAsTemplate()), request.newTemplateName(),
+                    provider, model);
         } else {
             UUID templateId = request != null ? request.templateId() : null;
-            summary = summaryService.generateSummary(meetingId, templateId);
+            summary = summaryService.generateSummary(meetingId, templateId, provider, model);
         }
         return new SummarizeResponse(summary.id(), summary.meetingId(), summary.textMd(),
                 summary.templateId(), summary.model(), summary.tokensUsed());
@@ -320,7 +323,9 @@ public class MeetingsController {
             String systemPromptOverride,
             String userPromptOverride,
             Boolean saveAsTemplate,
-            String newTemplateName
+            String newTemplateName,
+            String provider,
+            String model
     ) {}
     
     public record SummarizeResponse(

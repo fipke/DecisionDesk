@@ -60,29 +60,38 @@ async function saveAiSettings(config: AiSettingsConfig): Promise<AiSettingsRespo
   return res.json();
 }
 
+// Ollama runs locally on the same machine as the desktop app — call it directly
+const OLLAMA_BASE = 'http://localhost:11434';
+
 async function fetchOllamaStatus(): Promise<OllamaStatus> {
   try {
-    const res = await fetch(`${AI_BASE}/ollama/status`);
+    const res = await fetch(`${OLLAMA_BASE}/api/tags`);
     if (!res.ok) return { running: false, models: [] };
-    return res.json();
+    const data = await res.json();
+    const models: OllamaModel[] = (data.models ?? []).map((m: { name: string; size: number; details?: { parameter_size?: string } }) => ({
+      name: m.name,
+      sizeBytes: m.size ?? 0,
+      parameterSize: m.details?.parameter_size ?? '',
+    }));
+    return { running: true, models };
   } catch {
     return { running: false, models: [] };
   }
 }
 
 async function loadOllamaModel(model: string): Promise<void> {
-  await fetch(`${AI_BASE}/ollama/load`, {
+  await fetch(`${OLLAMA_BASE}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model }),
+    body: JSON.stringify({ model, keep_alive: '5m' }),
   });
 }
 
 async function unloadOllamaModel(model: string): Promise<void> {
-  await fetch(`${AI_BASE}/ollama/unload`, {
+  await fetch(`${OLLAMA_BASE}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model }),
+    body: JSON.stringify({ model, keep_alive: '0' }),
   });
 }
 
@@ -105,6 +114,7 @@ export function SettingsScreen() {
   const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const [localSettings, setLocalSettings] = useState<Settings | null>(null);
+  const [showOllamaSetup, setShowOllamaSetup] = useState(false);
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['settings'],
@@ -423,12 +433,59 @@ export function SettingsScreen() {
           ) : (
             <div className="mt-4 space-y-5">
               {/* Ollama Status */}
-              <div className="flex items-center gap-2">
-                <div className={`h-2.5 w-2.5 rounded-full ${ollamaStatus.running ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                <span className="text-sm text-slate-300">
-                  {ollamaStatus.running ? 'Ollama rodando' : 'Ollama offline'}
-                </span>
-              </div>
+              {ollamaStatus.running ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <span className="text-sm text-slate-300">Ollama rodando</span>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+                  <button
+                    onClick={() => setShowOllamaSetup(!showOllamaSetup)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-amber-500/5 transition-colors"
+                  >
+                    <div className="h-2.5 w-2.5 rounded-full bg-amber-400 shrink-0" />
+                    <span className="text-sm text-amber-200/90 flex-1">Ollama não conectado</span>
+                    <svg
+                      className={`h-3.5 w-3.5 text-slate-500 transition-transform ${showOllamaSetup ? 'rotate-180' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showOllamaSetup && (
+                    <div className="px-4 pb-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <svg className="h-3.5 w-3.5 text-amber-400/70 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <div className="space-y-2 flex-1">
+                          <p className="text-xs text-slate-400">Instalar e iniciar:</p>
+                          <div className="rounded-md bg-dd-base border border-dd-border px-3 py-2 font-mono text-xs text-slate-300 space-y-1">
+                            <p><span className="text-slate-500 select-none">$ </span>brew install ollama</p>
+                            <p><span className="text-slate-500 select-none">$ </span>ollama serve</p>
+                          </div>
+                          <p className="text-xs text-slate-400">Baixar um modelo para resumos:</p>
+                          <div className="rounded-md bg-dd-base border border-dd-border px-3 py-2 font-mono text-xs text-slate-300">
+                            <p><span className="text-slate-500 select-none">$ </span>ollama pull qwen2.5:14b</p>
+                          </div>
+                        </div>
+                      </div>
+                      <a
+                        href="https://ollama.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        ollama.com
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Error banner */}
               {aiError && (

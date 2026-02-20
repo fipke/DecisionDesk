@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Server, Info, Sun, Moon, Cpu, Cloud, Loader2, Download, XCircle } from 'lucide-react';
+import { Server, Info, Sun, Moon, Cpu, Cloud, Loader2, Download, XCircle, Terminal, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../ThemeContext';
 import {
@@ -50,6 +50,7 @@ export function SettingsPage() {
     openaiEnabled: false,
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showOllamaSetup, setShowOllamaSetup] = useState(false);
 
   // --- Queries ---
   const aiSettingsQuery = useQuery({
@@ -185,20 +186,61 @@ export function SettingsPage() {
               <h2 className="text-slate-100 text-sm font-medium">Provedor de IA</h2>
             </div>
 
-            {/* Ollama status indicator */}
-            <div className="flex items-center gap-2 mb-5">
-              <span
-                className={`inline-block h-2.5 w-2.5 rounded-full ${
-                  ollamaRunning ? 'bg-emerald-400' : 'bg-red-400'
-                }`}
-              />
-              <span className="text-sm text-slate-300">
-                {ollamaRunning ? 'Ollama disponível' : 'Ollama não encontrado'}
-              </span>
-              {ollamaQuery.isLoading && (
-                <Loader2 size={14} className="text-slate-500 animate-spin" />
-              )}
-            </div>
+            {/* Ollama status */}
+            {ollamaRunning ? (
+              <div className="flex items-center gap-2 mb-5">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                <span className="text-sm text-slate-300">Ollama disponível</span>
+                {ollamaQuery.isLoading && (
+                  <Loader2 size={14} className="text-slate-500 animate-spin" />
+                )}
+              </div>
+            ) : (
+              <div className="mb-5 rounded-lg border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowOllamaSetup(!showOllamaSetup)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-amber-500/5 transition-colors"
+                >
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="text-sm text-amber-200/90 flex-1">Ollama não conectado</span>
+                  {ollamaQuery.isLoading ? (
+                    <Loader2 size={14} className="text-slate-500 animate-spin shrink-0" />
+                  ) : showOllamaSetup ? (
+                    <ChevronUp size={14} className="text-slate-500 shrink-0" />
+                  ) : (
+                    <ChevronDown size={14} className="text-slate-500 shrink-0" />
+                  )}
+                </button>
+                {showOllamaSetup && (
+                  <div className="px-4 pb-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Terminal size={13} className="text-amber-400/70 mt-0.5 shrink-0" />
+                      <div className="space-y-2 flex-1">
+                        <p className="text-xs text-slate-400">Instalar e iniciar:</p>
+                        <div className="bg-dd-base rounded-md px-3 py-2 font-mono text-xs text-slate-300 space-y-1">
+                          <p><span className="text-slate-500 select-none">$ </span>brew install ollama</p>
+                          <p><span className="text-slate-500 select-none">$ </span>ollama serve</p>
+                        </div>
+                        <p className="text-xs text-slate-400">Baixar um modelo para resumos:</p>
+                        <div className="bg-dd-base rounded-md px-3 py-2 font-mono text-xs text-slate-300">
+                          <p><span className="text-slate-500 select-none">$ </span>ollama pull qwen2.5:14b</p>
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      href="https://ollama.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      <ExternalLink size={11} />
+                      ollama.com
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Per-task provider configuration */}
             <div className="space-y-5">

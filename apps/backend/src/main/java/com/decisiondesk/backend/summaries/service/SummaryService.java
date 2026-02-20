@@ -2,6 +2,7 @@ package com.decisiondesk.backend.summaries.service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,11 +24,13 @@ import com.decisiondesk.backend.meetingtypes.persistence.MeetingTypeRepository;
 import com.decisiondesk.backend.ai.AiCompletion;
 import com.decisiondesk.backend.ai.AiCompletionProvider;
 import com.decisiondesk.backend.ai.AiProviderRouter;
+import com.decisiondesk.backend.notes.persistence.UserPreferenceRepository;
 import com.decisiondesk.backend.summaries.model.Summary;
 import com.decisiondesk.backend.summaries.model.SummaryTemplate;
 import com.decisiondesk.backend.summaries.persistence.SummaryRepository;
 import com.decisiondesk.backend.summaries.persistence.SummaryTemplateRepository;
 import com.decisiondesk.backend.web.ApiException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Service for generating meeting summaries using AI providers (OpenAI / Ollama).
@@ -38,6 +41,9 @@ public class SummaryService {
 
     private static final Logger log = LoggerFactory.getLogger(SummaryService.class);
     private static final BigDecimal USD_TO_BRL = new BigDecimal("5.0");
+    private static final String DEFAULT_USER = "default";
+    private static final String DEFAULT_PROVIDER = "ollama";
+    private static final String DEFAULT_MODEL = "qwen2.5:14b";
 
     private final TranscriptRepository transcriptRepository;
     private final SummaryRepository summaryRepository;
@@ -46,6 +52,8 @@ public class SummaryService {
     private final MeetingRepository meetingRepository;
     private final MeetingTypeRepository meetingTypeRepository;
     private final AiProviderRouter aiProviderRouter;
+    private final UserPreferenceRepository preferenceRepository;
+    private final ObjectMapper objectMapper;
 
     public SummaryService(
             TranscriptRepository transcriptRepository,
@@ -54,7 +62,9 @@ public class SummaryService {
             UsageRecordRepository usageRecordRepository,
             MeetingRepository meetingRepository,
             MeetingTypeRepository meetingTypeRepository,
-            AiProviderRouter aiProviderRouter) {
+            AiProviderRouter aiProviderRouter,
+            UserPreferenceRepository preferenceRepository,
+            ObjectMapper objectMapper) {
         this.transcriptRepository = transcriptRepository;
         this.summaryRepository = summaryRepository;
         this.templateRepository = templateRepository;
@@ -62,6 +72,8 @@ public class SummaryService {
         this.meetingRepository = meetingRepository;
         this.meetingTypeRepository = meetingTypeRepository;
         this.aiProviderRouter = aiProviderRouter;
+        this.preferenceRepository = preferenceRepository;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -70,23 +82,26 @@ public class SummaryService {
      * Re-generating with the same template overwrites the previous summary for that template.
      */
     @Transactional
-    public Summary generateSummary(UUID meetingId, UUID templateId) {
+    public Summary generateSummary(UUID meetingId, UUID templateId,
+                                    String providerName, String modelOverride) {
         Transcript transcript = transcriptRepository.findByMeetingId(meetingId)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
                         "NO_TRANSCRIPT", "Meeting has no transcript to summarize"));
 
         SummaryTemplate template = resolveTemplate(templateId);
 
-        log.info("Generating summary for meeting={} using template={}",
-                meetingId, template.name());
+        AiCompletionProvider provider = resolveProvider(providerName);
+        String effectiveModel = resolveModel(modelOverride, template.model());
+
+        log.info("Generating summary for meeting={} using template={} provider={} model={}",
+                meetingId, template.name(), provider.name(), effectiveModel);
 
         String userPrompt = template.buildUserPrompt(transcript.text());
 
-        AiCompletionProvider provider = aiProviderRouter.getProvider("openai");
         AiCompletion completion = provider.chatCompletion(
                 template.systemPrompt(),
                 userPrompt,
-                template.model(),
+                effectiveModel,
                 template.maxTokens(),
                 template.temperature()
         );
@@ -110,7 +125,8 @@ public class SummaryService {
     @Transactional
     public Summary generateSummary(UUID meetingId, UUID templateId,
                                     String systemPromptOverride, String userPromptOverride,
-                                    boolean saveAsTemplate, String newTemplateName) {
+                                    boolean saveAsTemplate, String newTemplateName,
+                                    String providerName, String modelOverride) {
         Transcript transcript = transcriptRepository.findByMeetingId(meetingId)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
                         "NO_TRANSCRIPT", "Meeting has no transcript to summarize"));
@@ -123,12 +139,15 @@ public class SummaryService {
             userPrompt = template.buildUserPrompt(transcript.text());
         }
 
-        log.info("Generating summary for meeting={} using template={} (overrides: sys={}, user={})",
-                meetingId, template.name(), systemPromptOverride != null, userPromptOverride != null);
+        AiCompletionProvider provider = resolveProvider(providerName);
+        String effectiveModel = resolveModel(modelOverride, template.model());
 
-        AiCompletionProvider provider = aiProviderRouter.getProvider("openai");
+        log.info("Generating summary for meeting={} using template={} provider={} model={} (overrides: sys={}, user={})",
+                meetingId, template.name(), provider.name(), effectiveModel,
+                systemPromptOverride != null, userPromptOverride != null);
+
         AiCompletion completion = provider.chatCompletion(
-                systemPrompt, userPrompt, template.model(), template.maxTokens(), template.temperature());
+                systemPrompt, userPrompt, effectiveModel, template.maxTokens(), template.temperature());
 
         recordUsage(meetingId, template, completion);
 
@@ -193,7 +212,7 @@ public class SummaryService {
         return templateIds.stream()
                 .map(templateId -> {
                     try {
-                        return generateSummary(meetingId, templateId);
+                        return generateSummary(meetingId, templateId, null, null);
                     } catch (Exception e) {
                         log.error("Failed to generate summary for meeting={} template={}: {}",
                                 meetingId, templateId, e.getMessage());
@@ -209,6 +228,72 @@ public class SummaryService {
      */
     public boolean deleteSummary(UUID summaryId) {
         return summaryRepository.deleteById(summaryId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private AiCompletionProvider resolveProvider(String providerOverride) {
+        if (providerOverride != null && !providerOverride.isBlank()) {
+            return aiProviderRouter.getProvider(providerOverride);
+        }
+        try {
+            return preferenceRepository.findByUserId(DEFAULT_USER)
+                    .filter(p -> p.aiConfig() != null)
+                    .map(p -> {
+                        try {
+                            Map<String, Object> config = objectMapper.readValue(p.aiConfig(), Map.class);
+                            Object summarization = config.get("summarization");
+                            if (summarization instanceof Map<?, ?> s) {
+                                Object provider = s.get("provider");
+                                if (provider instanceof String name && !name.isBlank()) {
+                                    return aiProviderRouter.getProvider(name);
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to parse AI config for provider resolution: {}", e.getMessage());
+                        }
+                        return (AiCompletionProvider) null;
+                    })
+                    .orElse(aiProviderRouter.getProvider(DEFAULT_PROVIDER));
+        } catch (Exception e) {
+            log.warn("Failed to read AI settings, falling back to {}: {}", DEFAULT_PROVIDER, e.getMessage());
+            return aiProviderRouter.getProvider(DEFAULT_PROVIDER);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String resolveModel(String modelOverride, String templateModel) {
+        if (modelOverride != null && !modelOverride.isBlank()) {
+            return modelOverride;
+        }
+        try {
+            String fromSettings = preferenceRepository.findByUserId(DEFAULT_USER)
+                    .filter(p -> p.aiConfig() != null)
+                    .map(p -> {
+                        try {
+                            Map<String, Object> config = objectMapper.readValue(p.aiConfig(), Map.class);
+                            Object summarization = config.get("summarization");
+                            if (summarization instanceof Map<?, ?> s) {
+                                Object model = s.get("model");
+                                if (model instanceof String name && !name.isBlank()) {
+                                    return name;
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Failed to parse AI config for model resolution: {}", e.getMessage());
+                        }
+                        return (String) null;
+                    })
+                    .orElse(null);
+            if (fromSettings != null) {
+                return fromSettings;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to read AI settings for model, using template default: {}", e.getMessage());
+        }
+        if (templateModel != null && !templateModel.isBlank()) {
+            return templateModel;
+        }
+        return DEFAULT_MODEL;
     }
 
     private SummaryTemplate resolveTemplate(UUID templateId) {
