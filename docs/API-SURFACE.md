@@ -114,3 +114,33 @@
 |--------|------|-------|
 | GET | `/api/v1/preferences/{userKey}` | Get preferences JSON |
 | PATCH | `/api/v1/preferences/{userKey}` | Partial update |
+
+## AI Extraction & Chat (PR10)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/api/v1/meetings/{id}/extract` | Extract action items, decisions, deadlines via AI |
+| POST | `/api/v1/meetings/{id}/chat` | Chat with transcript via AI (`{message, provider?, model?}`) |
+
+## AI Settings (PR10)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/v1/settings/ai` | Per-task AI provider/model config |
+| PUT | `/api/v1/settings/ai` | Update AI settings |
+
+## Ollama Management (PR10)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/v1/ollama/status` | Running status + installed models |
+| GET | `/api/v1/ollama/models` | List installed Ollama models |
+| POST | `/api/v1/ollama/load` | Load model into memory (`{model}`) |
+| POST | `/api/v1/ollama/unload` | Unload model (`{model}`) |
+
+## Dashboard Stats (PR10)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/v1/stats` | Aggregate counts: meetings, minutes, pending, this week |
+| GET | `/api/v1/stats/calendar` | Meeting counts per day (`?from=&to=`) |

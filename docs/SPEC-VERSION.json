@@ -1,6 +1,6 @@
 {
-  "version": "v8",
-  "updated": "2026-02-18",
+  "version": "v9",
+  "updated": "2026-02-19",
   "authoritative": [
     "docs/SPEC-MASTER.md",
     "docs/SPEC-LOADLIST.md"
@@ -16,27 +16,18 @@
     "PR08",
     "PR09",
     "PR-Notes",
-    "PR-Offline"
+    "PR-Offline",
+    "PR10-UX-Redesign"
   ],
-  "inProgress": [
-    "PR10",
-    "PR11"
-  ],
+  "inProgress": [],
   "planned": [
+    "PR11",
     "PR12",
     "PR13",
     "PR14"
   ],
   "specFiles": {
-    "PR02": "docs/specs/PR02-PATCH.md",
-    "PR03": "docs/specs/PR03-SPEC.md",
-    "PR04": "docs/specs/PR04-SPEC.md",
-    "PR05": "docs/specs/PR05-SPEC.md",
-    "PR06": "docs/specs/PR06-SPEC.md",
-    "PR07": "docs/specs/PR07-SPEC.md",
-    "PR08": "docs/specs/PR08-SPEC.md",
-    "PR09": "docs/specs/PR09-SPEC.md",
-    "PR-Notes": "docs/specs/PR-Notes-SPEC.md",
-    "PR-Offline": "docs/specs/PR-Offline-SPEC.md"
+    "completed": "docs/specs/ARCHIVE-COMPLETED.md",
+    "process": "docs/specs/PR00-SPEC-FIXUP.md"
   }
 }

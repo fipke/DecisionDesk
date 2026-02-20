@@ -15,7 +15,7 @@
 | PR09 | AI Summaries — GPT-4, templates | ✅ Done | Backend + Mobile |
 | PR-Notes | Notes system — agenda/live/post, series, import | ✅ Done | Backend |
 | PR-Offline | Desktop offline-first — SQLite, outbox sync | ✅ Done | Desktop |
-| PR10 | Web v1 — dashboard, meetings, notes | 🚧 In Progress | Web |
+| PR10 | UX Redesign — dashboard, Ollama, multi-summary, 3-panel layout | ✅ Done | All |
 | PR11 | Chunked upload, WebSockets live progress | 🚧 Planned | Backend + All |
 | PR12 | Budget tracking and cost alerts | 📋 Planned | Backend |
 | PR13 | Advanced search and filters | 📋 Planned | Backend + All |
@@ -88,12 +88,20 @@
 
 ---
 
-## In Progress / Planned
+### PR10 — UX Redesign (Modern Feature Upgrade)
+- **Backend**: AI provider abstraction (Ollama + OpenAI), AiProviderRouter, per-task model config
+- **Backend**: OllamaClient (REST to local server), AiExtractionService, MeetingChatController
+- **Backend**: StatsController (dashboard), AiSettingsController, V7+V8 migrations
+- **Backend**: Multi-summary per meeting (composite unique on meeting_id + template_id)
+- **Backend**: Meeting type enrichment (starter templates with summary_template_ids, extraction_config)
+- **Web**: Full React/Vite app — Dashboard, MeetingDetail (3-panel layout), MeetingTypes CRUD, Templates, Settings
+- **Web**: Notes editor with auto-save, multi-summary sub-tabs, AI settings with Ollama management
+- **Desktop**: Theme toggle, TemplatesScreen, PeopleScreen, RecordScreen, AI settings section
+- **Mobile**: Theme toggle, TemplatesScreen, AI provider selection, dark theme across all components
 
-### PR10 — Web v1
-- React dashboard (`apps/web`)
-- Meeting list, details, notes editor, folder tree, people management
-- Reuse `packages/types` and `packages/utils`
+---
+
+## In Progress / Planned
 
 ### PR11 — Chunked Upload + WebSockets
 - Resumable multipart audio upload (large files)
@@ -108,6 +116,19 @@
 - Filter by folder, type, date range, people, tags
 
 ### PR14 — Desktop Advanced Features
+
 - Live microphone + system audio capture
 - In-app Whisper model downloader
 - Real-time captions overlay
+
+---
+
+## Backlog (Ideas)
+
+### Visual Meeting Summary (inspired by notta.ai)
+
+- LLM (qwen2.5:14b local) extracts structured JSON: key findings, metrics, action items, timeline
+- Frontend renders as infographic card using Recharts (charts) + Mermaid.js (diagrams) + Tailwind
+- Export to PNG/PDF via html2canvas + jsPDF
+- Works with local Ollama, no paid API required
+- Libraries: Recharts, Mermaid.js, html2canvas, jsPDF

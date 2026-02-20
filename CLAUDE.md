@@ -112,7 +112,8 @@ npm test                # Jest
 ## Key Docs to Read Before Coding
 
 ```
-docs/SCOPE.md
+docs/SPEC-LOADLIST.md           (reading order)
+docs/SPEC-MASTER.md             (product pillars, architecture)
 docs/ROADMAP.md
 docs/API-SURFACE.md
 docs/DB-SCHEMA.md
@@ -121,10 +122,7 @@ docs/ENV.md
 docs/ERRORS.md
 docs/SECURITY.md
 docs/LOCAL-TRANSCRIBE.md
-docs/QUEUE.md
-docs/addenda/API-SURFACE-DELTA.md
-docs/addenda/ENV-DELTA.md
-docs/specs/PR0{2-6}-SPEC.md    (feature-specific deltas)
+docs/specs/ARCHIVE-COMPLETED.md (all completed PR summaries)
 ```
 
 ## Git / Commits

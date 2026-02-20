@@ -57,6 +57,25 @@ Two templates seeded: `00000000-…0010` (Resumo Executivo) and `00000000-…001
 
 Auto-updated `updated_at` trigger included.
 
+## V7 — Soft Deletes
+
+`meetings` gets: `deleted_at` TIMESTAMPTZ (null = active).
+Partial index: `idx_meetings_deleted_at` WHERE `deleted_at IS NULL`.
+
+## V8 — Multi-Summary + Meeting Type Enrichment
+
+**Summaries**: Drops unique `meeting_id` constraint. New composite indexes:
+- `idx_summaries_meeting_template` UNIQUE on `(meeting_id, template_id)` WHERE `template_id IS NOT NULL`
+- `idx_summaries_meeting_default` UNIQUE on `(meeting_id)` WHERE `template_id IS NULL`
+
+**meeting_types** gets: `summary_template_ids` UUID[], `extraction_config` JSONB, `ai_provider` VARCHAR(20), `default_participants` UUID[], `icon`, `color`.
+
+**summary_templates** gets: `extraction_config` JSONB (overrides meeting_type when set).
+
+**user_preferences** gets: `ai_config` JSONB (per-task AI provider/model settings).
+
+Seed data: "Acompanhamento Semanal" template + "Reuniao Ray (PowerBI)" meeting type.
+
 ## Indexes of note
 
 - `meetings`: GIN on `tags`; btree on `folder_id`, `meeting_type_id`
