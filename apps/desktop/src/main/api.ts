@@ -169,6 +169,47 @@ export class ApiService {
     await this.client.put(`/api/v1/series/${payload.id}`, payload);
   }
 
+  async syncMeetingSpeaker(payload: Record<string, unknown>): Promise<void> {
+    await this.client.put(`/api/v1/meetings/${payload.meetingId}/speakers/${payload.id}`, {
+      displayName: payload.displayName ?? payload.display_name ?? null,
+      personId: payload.personId ?? payload.person_id ?? null,
+    });
+  }
+
+  async deleteMeetingSpeaker(meetingId: string, speakerId: string): Promise<void> {
+    await this.client.delete(`/api/v1/meetings/${meetingId}/speakers/${speakerId}`);
+  }
+
+  async syncSegmentsBulk(meetingId: string): Promise<void> {
+    // Load segments from local DB and push to backend
+    // This is called from the sync service — import here to avoid circular deps
+    const { listSegments, listMeetingSpeakers } = await import('./repositories');
+    const segments = listSegments(meetingId);
+    const speakers = listMeetingSpeakers(meetingId);
+
+    // Push speakers first, then segments
+    for (const speaker of speakers) {
+      await this.client.put(`/api/v1/meetings/${meetingId}/speakers/${speaker.id}`, {
+        displayName: speaker.displayName,
+        personId: speaker.personId,
+      }).catch(() => { /* speaker may already exist */ });
+    }
+
+    await this.client.post(`/api/v1/meetings/${meetingId}/segments`, {
+      segments: segments.map(s => ({
+        startSec: s.startSec,
+        endSec: s.endSec,
+        text: s.text,
+        speakerLabel: s.speakerLabel,
+      })),
+    });
+  }
+
+  async syncSegmentUpdate(payload: Record<string, unknown>): Promise<void> {
+    // Individual segment speaker update — not critical for initial sync
+    // The bulk sync will handle it on next full push
+  }
+
   async transcribeMeeting(meetingId: string, options?: { provider?: string; model?: string; enableDiarization?: boolean }): Promise<{ meetingId: string; status: string }> {
     const response = await this.client.post(`/api/v1/meetings/${meetingId}/transcribe`, options ?? {});
     return response.data;

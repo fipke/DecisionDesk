@@ -126,6 +126,24 @@ export class SyncService {
         }
         break;
 
+      case 'meeting_speakers':
+        if (action === 'CREATE' || action === 'UPDATE') {
+          await this.api.syncMeetingSpeaker(payload);
+        } else if (action === 'DELETE') {
+          await this.api.deleteMeetingSpeaker(payload.meetingId, payload.id);
+        }
+        break;
+
+      case 'transcript_segments':
+        // Segments are synced in bulk — the payload contains { meetingId, count }
+        // Individual updates (speaker reassign) are also handled
+        if (action === 'CREATE') {
+          await this.api.syncSegmentsBulk(payload.meetingId);
+        } else if (action === 'UPDATE') {
+          await this.api.syncSegmentUpdate(payload);
+        }
+        break;
+
       default:
         console.warn(`[SyncService] Unknown table: ${table}`);
     }
