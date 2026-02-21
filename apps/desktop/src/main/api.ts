@@ -94,6 +94,14 @@ export class ApiService {
 
   async syncMeeting(payload: Record<string, unknown>): Promise<void> {
     await this.client.put(`/api/v1/meetings/${payload.id}`, payload);
+    // Also sync transcript text if present (desktop-local transcription)
+    const text = (payload.transcriptText ?? payload.transcript_text) as string | undefined;
+    if (text) {
+      await this.client.put(`/api/v1/meetings/${payload.id}/transcript`, {
+        text,
+        language: (payload.language as string) ?? 'pt',
+      }).catch((err: any) => console.warn('[Sync] transcript push failed:', err?.message));
+    }
   }
 
   async deleteMeeting(id: string): Promise<void> {

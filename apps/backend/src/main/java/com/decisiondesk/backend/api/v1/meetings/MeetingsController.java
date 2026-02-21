@@ -35,7 +35,9 @@ import com.decisiondesk.backend.meetings.model.AudioUploadResult;
 import com.decisiondesk.backend.meetings.model.Meeting;
 import com.decisiondesk.backend.meetings.model.MeetingCostBreakdown;
 import com.decisiondesk.backend.meetings.model.MeetingDetails;
+import com.decisiondesk.backend.meetings.model.Transcript;
 import com.decisiondesk.backend.meetings.persistence.AudioAssetRepository;
+import com.decisiondesk.backend.meetings.persistence.TranscriptRepository;
 import com.decisiondesk.backend.summaries.model.Summary;
 import com.decisiondesk.backend.summaries.service.SummaryService;
 
@@ -55,14 +57,17 @@ public class MeetingsController {
     private final SummaryService summaryService;
     private final AudioAssetRepository audioAssetRepository;
     private final AiExtractionService aiExtractionService;
+    private final TranscriptRepository transcriptRepository;
 
     public MeetingsController(MeetingService meetingService, SummaryService summaryService,
                               AudioAssetRepository audioAssetRepository,
-                              AiExtractionService aiExtractionService) {
+                              AiExtractionService aiExtractionService,
+                              TranscriptRepository transcriptRepository) {
         this.meetingService = meetingService;
         this.summaryService = summaryService;
         this.audioAssetRepository = audioAssetRepository;
         this.aiExtractionService = aiExtractionService;
+        this.transcriptRepository = transcriptRepository;
     }
 
     @GetMapping
@@ -297,6 +302,21 @@ public class MeetingsController {
         return new ListMeetingResponse(meeting.id(), meeting.status(), meeting.title(), meeting.createdAt(), meeting.updatedAt(),
                 null, null, meeting.meetingTypeId(), null);
     }
+
+    @PutMapping("/{meetingId}/transcript")
+    @Operation(summary = "Upsert transcript text", description = "Syncs transcript text from desktop-local transcription")
+    @ApiResponse(responseCode = "200", description = "Transcript saved")
+    public ResponseEntity<Void> upsertTranscript(
+            @PathVariable UUID meetingId,
+            @RequestBody UpsertTranscriptRequest request) {
+        Transcript transcript = new Transcript(
+                UUID.randomUUID(), meetingId, request.language() != null ? request.language() : "pt",
+                request.text(), OffsetDateTime.now());
+        transcriptRepository.upsert(transcript);
+        return ResponseEntity.ok().build();
+    }
+
+    public record UpsertTranscriptRequest(String text, String language) {}
 
     public record UpdateMeetingRequest(
             String title,
