@@ -3,7 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   Meeting, Folder, MeetingType, Person, MeetingPerson,
   NoteBlock, Summary, MeetingSeries, MeetingSeriesEntry,
-  Template, Settings, PendingJob, AcceptedJob
+  Template, Settings, PendingJob, AcceptedJob,
+  TranscriptSegment, MeetingSpeaker
 } from '../shared/types';
 
 // ─── ElectronAPI type definition ─────────────────────────────
@@ -32,7 +33,9 @@ export interface ElectronAPI {
       language: string;
       durationSeconds: number;
       processingTimeMs: number;
+      segments?: Array<{ start: number; end: number; text: string; speaker?: string }>;
     }>;
+    diarize: (audioPath: string) => Promise<{ segments: Array<{ start: number; end: number; speaker: string }> }>;
   };
   api: {
     setUrl: (url: string) => Promise<void>;
@@ -106,6 +109,18 @@ export interface ElectronAPI {
     listSummaries: (meetingId: string) => Promise<Summary[]>;
     upsertSummary: (s: Partial<Summary> & { meetingId: string; bodyMarkdown: string }) => Promise<Summary>;
 
+    // Transcript Segments
+    listSegments: (meetingId: string) => Promise<TranscriptSegment[]>;
+    insertSegmentsBatch: (meetingId: string, segments: Array<Omit<TranscriptSegment, 'id'> & { id?: string }>) => Promise<TranscriptSegment[]>;
+    deleteSegments: (meetingId: string) => Promise<void>;
+    updateSegmentSpeaker: (segmentId: string, speakerId: string, speakerLabel: string) => Promise<void>;
+
+    // Meeting Speakers
+    listMeetingSpeakers: (meetingId: string) => Promise<MeetingSpeaker[]>;
+    upsertMeetingSpeaker: (speaker: Partial<MeetingSpeaker> & { meetingId: string; label: string }) => Promise<MeetingSpeaker>;
+    deleteMeetingSpeaker: (id: string) => Promise<void>;
+    mergeSpeakers: (meetingId: string, keepId: string, absorbId: string) => Promise<void>;
+
     // Meeting Series
     listMeetingSeries: () => Promise<MeetingSeries[]>;
     upsertMeetingSeries: (ms: Partial<MeetingSeries> & { name: string }) => Promise<MeetingSeries>;
@@ -150,7 +165,8 @@ const electronAPI: ElectronAPI = {
   },
   whisper: {
     getStatus: () => ipcRenderer.invoke('whisper:get-status'),
-    transcribe: (audioPath, options) => ipcRenderer.invoke('whisper:transcribe', audioPath, options)
+    transcribe: (audioPath, options) => ipcRenderer.invoke('whisper:transcribe', audioPath, options),
+    diarize: (audioPath) => ipcRenderer.invoke('whisper:diarize', audioPath)
   },
   api: {
     setUrl: (url) => ipcRenderer.invoke('api:set-url', url),
@@ -224,6 +240,20 @@ const electronAPI: ElectronAPI = {
     // Summaries
     listSummaries: (meetingId) => ipcRenderer.invoke('db:summaries:list', meetingId),
     upsertSummary: (s) => ipcRenderer.invoke('db:summaries:upsert', s),
+
+    // Transcript Segments
+    listSegments: (meetingId) => ipcRenderer.invoke('db:segments:list', meetingId),
+    insertSegmentsBatch: (meetingId, segments) => ipcRenderer.invoke('db:segments:insert-batch', meetingId, segments),
+    deleteSegments: (meetingId) => ipcRenderer.invoke('db:segments:delete', meetingId),
+    updateSegmentSpeaker: (segmentId, speakerId, speakerLabel) =>
+      ipcRenderer.invoke('db:segments:update-speaker', segmentId, speakerId, speakerLabel),
+
+    // Meeting Speakers
+    listMeetingSpeakers: (meetingId) => ipcRenderer.invoke('db:speakers:list', meetingId),
+    upsertMeetingSpeaker: (speaker) => ipcRenderer.invoke('db:speakers:upsert', speaker),
+    deleteMeetingSpeaker: (id) => ipcRenderer.invoke('db:speakers:delete', id),
+    mergeSpeakers: (meetingId, keepId, absorbId) =>
+      ipcRenderer.invoke('db:speakers:merge', meetingId, keepId, absorbId),
 
     // Series
     listMeetingSeries: () => ipcRenderer.invoke('db:series:list'),

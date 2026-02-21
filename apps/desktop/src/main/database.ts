@@ -240,6 +240,38 @@ const MIGRATIONS: Migration[] = [
   {
     name: '011_duration_sec',
     sql: `ALTER TABLE meetings ADD COLUMN duration_sec INTEGER;`
+  },
+  {
+    name: '012_transcript_segments',
+    sql: `
+      CREATE TABLE IF NOT EXISTS meeting_speakers (
+        id            TEXT PRIMARY KEY NOT NULL,
+        meeting_id    TEXT NOT NULL,
+        label         TEXT NOT NULL,
+        display_name  TEXT,
+        person_id     TEXT,
+        color_index   INTEGER NOT NULL DEFAULT 0,
+        talk_time_sec REAL NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        UNIQUE(meeting_id, label)
+      );
+      CREATE INDEX IF NOT EXISTS idx_meeting_speakers_meeting ON meeting_speakers(meeting_id);
+
+      CREATE TABLE IF NOT EXISTS transcript_segments (
+        id            TEXT PRIMARY KEY NOT NULL,
+        meeting_id    TEXT NOT NULL,
+        ordinal       INTEGER NOT NULL,
+        start_sec     REAL NOT NULL,
+        end_sec       REAL NOT NULL,
+        text          TEXT NOT NULL,
+        speaker_label TEXT,
+        speaker_id    TEXT,
+        created_at    TEXT NOT NULL,
+        UNIQUE(meeting_id, ordinal)
+      );
+      CREATE INDEX IF NOT EXISTS idx_transcript_segments_meeting ON transcript_segments(meeting_id);
+    `
   }
 ];
 

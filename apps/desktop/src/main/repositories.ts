@@ -10,7 +10,8 @@ import { getDatabase } from './database';
 import type {
   Meeting, Folder, MeetingType, Person, MeetingPerson,
   NoteBlock, Summary, MeetingSeries, MeetingSeriesEntry,
-  Template, SyncQueueItem, SyncAction
+  Template, SyncQueueItem, SyncAction,
+  TranscriptSegment, MeetingSpeaker
 } from '../shared/types';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -629,6 +630,194 @@ export function deleteTemplate(id: string): void {
   const db = getDatabase();
   db.prepare('DELETE FROM templates WHERE id = ?').run(id);
   enqueue(db, 'templates', id, 'DELETE', { id });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Meeting Speakers
+// ═══════════════════════════════════════════════════════════════
+
+export function listMeetingSpeakers(meetingId: string): MeetingSpeaker[] {
+  const db = getDatabase();
+  const rows = db.prepare(
+    'SELECT * FROM meeting_speakers WHERE meeting_id = ? ORDER BY color_index'
+  ).all(meetingId) as any[];
+  return rows.map(mapMeetingSpeakerRow);
+}
+
+export function getMeetingSpeaker(id: string): MeetingSpeaker | null {
+  const db = getDatabase();
+  const row = db.prepare('SELECT * FROM meeting_speakers WHERE id = ?').get(id) as any | undefined;
+  return row ? mapMeetingSpeakerRow(row) : null;
+}
+
+export function upsertMeetingSpeaker(
+  speaker: Partial<MeetingSpeaker> & { meetingId: string; label: string },
+  enqueueSync = true
+): MeetingSpeaker {
+  const db = getDatabase();
+  const id = speaker.id || uuid();
+  const ts = now();
+
+  db.prepare(`
+    INSERT INTO meeting_speakers (id, meeting_id, label, display_name, person_id, color_index, talk_time_sec, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      display_name = excluded.display_name,
+      person_id = excluded.person_id,
+      color_index = excluded.color_index,
+      talk_time_sec = excluded.talk_time_sec,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    speaker.meetingId,
+    speaker.label,
+    speaker.displayName ?? null,
+    speaker.personId ?? null,
+    speaker.colorIndex ?? 0,
+    speaker.talkTimeSec ?? 0,
+    speaker.createdAt ?? ts,
+    speaker.updatedAt ?? ts
+  );
+
+  const saved = getMeetingSpeaker(id)!;
+  if (enqueueSync) {
+    enqueue(db, 'meeting_speakers', id, speaker.id ? 'UPDATE' : 'CREATE', saved as any);
+  }
+  return saved;
+}
+
+export function deleteMeetingSpeaker(id: string): void {
+  const db = getDatabase();
+  db.prepare('DELETE FROM meeting_speakers WHERE id = ?').run(id);
+  enqueue(db, 'meeting_speakers', id, 'DELETE', { id });
+}
+
+export function mergeSpeakers(meetingId: string, keepId: string, absorbId: string): void {
+  const db = getDatabase();
+  db.transaction(() => {
+    // Reassign all segments from absorbed speaker to kept speaker
+    const kept = getMeetingSpeaker(keepId);
+    if (!kept) throw new Error(`Speaker ${keepId} not found`);
+
+    db.prepare(
+      'UPDATE transcript_segments SET speaker_id = ?, speaker_label = ? WHERE meeting_id = ? AND speaker_id = ?'
+    ).run(keepId, kept.label, meetingId, absorbId);
+
+    // Delete absorbed speaker
+    db.prepare('DELETE FROM meeting_speakers WHERE id = ?').run(absorbId);
+
+    // Recalculate talk time for kept speaker
+    const result = db.prepare(
+      'SELECT COALESCE(SUM(end_sec - start_sec), 0) as total FROM transcript_segments WHERE meeting_id = ? AND speaker_id = ?'
+    ).get(meetingId, keepId) as any;
+    db.prepare(
+      'UPDATE meeting_speakers SET talk_time_sec = ?, updated_at = ? WHERE id = ?'
+    ).run(result.total, now(), keepId);
+  })();
+
+  // Enqueue sync for both
+  enqueue(db, 'meeting_speakers', keepId, 'UPDATE', { meetingId, keepId, absorbId });
+}
+
+function mapMeetingSpeakerRow(row: any): MeetingSpeaker {
+  return {
+    id: row.id,
+    meetingId: row.meeting_id,
+    label: row.label,
+    displayName: row.display_name ?? null,
+    personId: row.person_id ?? null,
+    colorIndex: row.color_index,
+    talkTimeSec: row.talk_time_sec,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Transcript Segments
+// ═══════════════════════════════════════════════════════════════
+
+export function listSegments(meetingId: string): TranscriptSegment[] {
+  const db = getDatabase();
+  const rows = db.prepare(
+    'SELECT * FROM transcript_segments WHERE meeting_id = ? ORDER BY ordinal'
+  ).all(meetingId) as any[];
+  return rows.map(mapSegmentRow);
+}
+
+export function insertSegmentsBatch(
+  meetingId: string,
+  segments: Array<Omit<TranscriptSegment, 'id'> & { id?: string }>
+): TranscriptSegment[] {
+  const db = getDatabase();
+  const ts = now();
+
+  const stmt = db.prepare(`
+    INSERT INTO transcript_segments (id, meeting_id, ordinal, start_sec, end_sec, text, speaker_label, speaker_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const results: TranscriptSegment[] = [];
+
+  db.transaction(() => {
+    for (const seg of segments) {
+      const id = seg.id || uuid();
+      stmt.run(
+        id,
+        meetingId,
+        seg.ordinal,
+        seg.startSec,
+        seg.endSec,
+        seg.text,
+        seg.speakerLabel ?? null,
+        seg.speakerId ?? null,
+        ts
+      );
+      results.push({
+        id,
+        meetingId,
+        ordinal: seg.ordinal,
+        startSec: seg.startSec,
+        endSec: seg.endSec,
+        text: seg.text,
+        speakerLabel: seg.speakerLabel ?? null,
+        speakerId: seg.speakerId ?? null,
+      });
+    }
+  })();
+
+  // Enqueue a single sync item for the batch
+  enqueue(db, 'transcript_segments', meetingId, 'CREATE', { meetingId, count: segments.length });
+
+  return results;
+}
+
+export function deleteSegments(meetingId: string): void {
+  const db = getDatabase();
+  db.prepare('DELETE FROM transcript_segments WHERE meeting_id = ?').run(meetingId);
+  // Also delete speakers for this meeting
+  db.prepare('DELETE FROM meeting_speakers WHERE meeting_id = ?').run(meetingId);
+}
+
+export function updateSegmentSpeaker(segmentId: string, speakerId: string, speakerLabel: string): void {
+  const db = getDatabase();
+  db.prepare(
+    'UPDATE transcript_segments SET speaker_id = ?, speaker_label = ? WHERE id = ?'
+  ).run(speakerId, speakerLabel, segmentId);
+  enqueue(db, 'transcript_segments', segmentId, 'UPDATE', { segmentId, speakerId, speakerLabel });
+}
+
+function mapSegmentRow(row: any): TranscriptSegment {
+  return {
+    id: row.id,
+    meetingId: row.meeting_id,
+    ordinal: row.ordinal,
+    startSec: row.start_sec,
+    endSec: row.end_sec,
+    text: row.text,
+    speakerLabel: row.speaker_label ?? null,
+    speakerId: row.speaker_id ?? null,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -58,9 +58,10 @@ def diarize(audio_path: str, hf_token: str = None) -> dict:
     
     # Load pyannote pipeline
     # Note: Requires accepting pyannote terms at https://huggingface.co/pyannote/speaker-diarization-3.1
+    # `use_auth_token` was removed in huggingface_hub>=0.20; use `token` instead.
     pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
-        use_auth_token=hf_token
+        token=hf_token
     )
     pipeline.to(device)
 
@@ -128,8 +129,13 @@ def main():
     hf_token = args.hf_token or os.environ.get("HUGGINGFACE_TOKEN")
     
     if not hf_token:
-        print("Warning: No HuggingFace token provided. Model access may fail.", file=sys.stderr)
-        print("Set HUGGINGFACE_TOKEN environment variable or use --hf-token", file=sys.stderr)
+        print("Warning: No HuggingFace token provided.", file=sys.stderr)
+        print("pyannote/speaker-diarization-3.1 is a gated model — a FREE token is required", file=sys.stderr)
+        print("only once to download the weights (inference runs 100% locally after that).", file=sys.stderr)
+        print("Steps:", file=sys.stderr)
+        print("  1. Accept terms at https://huggingface.co/pyannote/speaker-diarization-3.1", file=sys.stderr)
+        print("  2. Create a read token at https://huggingface.co/settings/tokens", file=sys.stderr)
+        print("  3. Set HUGGINGFACE_TOKEN env var or pass --hf-token <token>", file=sys.stderr)
     
     print(f"Running diarization on {audio_path}...", file=sys.stderr)
     

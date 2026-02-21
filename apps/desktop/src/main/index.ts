@@ -77,7 +77,8 @@ function initializeServices(): void {
     modelsPath: getModelsPath(),
     whisperPath: getWhisperPath(),
     diarizePath: getDiarizePath(),
-    diarizeVenvPython: getDiarizeVenvPython()
+    diarizeVenvPython: getDiarizeVenvPython(),
+    huggingfaceToken: (store.get('huggingfaceToken') as string | undefined) ?? undefined
   });
 
   // 3. API client
@@ -155,6 +156,9 @@ function setupIPC(): void {
       apiService.setBaseUrl(value as string);
       connectivityService.setBackendUrl(value as string);
     }
+    if (key === 'huggingfaceToken') {
+      whisperService.setHuggingfaceToken(value as string);
+    }
     return store.store;
   });
 
@@ -170,6 +174,9 @@ function setupIPC(): void {
   }));
   ipcMain.handle('whisper:transcribe', (_, audioPath: string, options) =>
     whisperService.transcribe(audioPath, options)
+  );
+  ipcMain.handle('whisper:diarize', (_, audioPath: string) =>
+    whisperService.diarize(audioPath)
   );
 
   // ── API ──
@@ -306,14 +313,24 @@ function setupIPC(): void {
   });
 
   ipcMain.handle('import:upload-audio', async (_, filePath: string, title?: string) => {
+    // 1. Create meeting shell
+    const createRes = await apiService['client'].post('/api/v1/meetings');
+    const meetingId = createRes.data.id;
+
+    // 2. Upload audio to the meeting
     const FormData = (await import('form-data')).default;
     const form = new FormData();
     form.append('file', createReadStream(filePath));
-    if (title) form.append('title', title);
-    const response = await apiService['client'].post('/api/v1/import/file', form, {
+    await apiService['client'].post(`/api/v1/meetings/${meetingId}/audio`, form, {
       headers: form.getHeaders(),
     });
-    return response.data;
+
+    // 3. Update title if provided
+    if (title) {
+      await apiService['client'].put(`/api/v1/meetings/${meetingId}`, { title });
+    }
+
+    return createRes.data;
   });
 
   ipcMain.handle('import:text', async (_, text: string, title?: string) => {
@@ -371,6 +388,21 @@ function setupIPC(): void {
   ipcMain.handle('db:templates:list', () => repo.listTemplates());
   ipcMain.handle('db:templates:upsert', (_, t) => repo.upsertTemplate(t));
   ipcMain.handle('db:templates:delete', (_, id: string) => repo.deleteTemplate(id));
+
+  // ── Database: Transcript Segments ──
+  ipcMain.handle('db:segments:list', (_, meetingId: string) => repo.listSegments(meetingId));
+  ipcMain.handle('db:segments:insert-batch', (_, meetingId: string, segments) =>
+    repo.insertSegmentsBatch(meetingId, segments));
+  ipcMain.handle('db:segments:delete', (_, meetingId: string) => repo.deleteSegments(meetingId));
+  ipcMain.handle('db:segments:update-speaker', (_, segmentId: string, speakerId: string, speakerLabel: string) =>
+    repo.updateSegmentSpeaker(segmentId, speakerId, speakerLabel));
+
+  // ── Database: Meeting Speakers ──
+  ipcMain.handle('db:speakers:list', (_, meetingId: string) => repo.listMeetingSpeakers(meetingId));
+  ipcMain.handle('db:speakers:upsert', (_, speaker) => repo.upsertMeetingSpeaker(speaker));
+  ipcMain.handle('db:speakers:delete', (_, id: string) => repo.deleteMeetingSpeaker(id));
+  ipcMain.handle('db:speakers:merge', (_, meetingId: string, keepId: string, absorbId: string) =>
+    repo.mergeSpeakers(meetingId, keepId, absorbId));
 
   // ── API: Templates + Summaries ──
   ipcMain.handle('api:templates:list', () => apiService.fetchTemplates());

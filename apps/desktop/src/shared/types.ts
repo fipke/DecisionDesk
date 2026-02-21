@@ -88,6 +88,31 @@ export interface NoteBlock {
   updatedAt: string;
 }
 
+// ─── Transcript Segments & Speakers ─────────────────────────
+
+export interface TranscriptSegment {
+  id: string;
+  meetingId: string;
+  ordinal: number;
+  startSec: number;
+  endSec: number;
+  text: string;
+  speakerLabel: string | null;
+  speakerId: string | null;
+}
+
+export interface MeetingSpeaker {
+  id: string;
+  meetingId: string;
+  label: string;
+  displayName: string | null;
+  personId: string | null;
+  colorIndex: number;
+  talkTimeSec: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── AI Summaries ────────────────────────────────────────────
 
 export interface Summary {
@@ -149,6 +174,8 @@ export interface Settings {
   apiUrl: string;
   whisperModel: string;
   enableDiarization: boolean;
+  /** HuggingFace read token — needed once to download pyannote weights (runs locally after). */
+  huggingfaceToken?: string;
   autoAcceptJobs: boolean;
   notificationsEnabled: boolean;
 }

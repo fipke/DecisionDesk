@@ -7,6 +7,7 @@ export interface WhisperConfig {
   modelsPath: string;
   diarizePath?: string; // Path to pyannote diarize.py script
   diarizeVenvPython?: string; // Path to venv Python binary for diarization
+  huggingfaceToken?: string; // Token to download gated pyannote weights (inference stays local)
 }
 
 export interface TranscribeOptions {
@@ -188,10 +189,38 @@ export class WhisperService {
     });
   }
 
+  /** Update the HuggingFace token at runtime (e.g. when saved from Settings). */
+  setHuggingfaceToken(token: string): void {
+    this.config.huggingfaceToken = token;
+  }
+
+  /** Run standalone diarization on an audio file (without transcription). */
+  async diarize(audioPath: string): Promise<{ segments: Array<{ start: number; end: number; speaker: string }> }> {
+    if (!this.isDiarizeAvailable()) {
+      throw new Error('Diarization not available — check pyannote venv and diarize.py');
+    }
+    if (!existsSync(audioPath)) {
+      throw new Error(`Audio file not found: ${audioPath}`);
+    }
+    return this.runDiarization(audioPath);
+  }
+
+  /** Merge diarization speaker labels into existing transcript segments (public for re-diarization flow). */
+  mergeSegmentsWithDiarization(
+    transcriptSegments: Segment[],
+    diarization: { segments: Array<{ start: number; end: number; speaker: string }> }
+  ): Segment[] {
+    return this.mergeWithDiarization([...transcriptSegments], diarization);
+  }
+
   private async runDiarization(audioPath: string): Promise<{ segments: Array<{ start: number; end: number; speaker: string }> }> {
     return new Promise((resolve, reject) => {
       const pythonBin = this.getDiarizePython()!;
-      const diarize = spawn(pythonBin, [this.config.diarizePath!, audioPath]);
+      const env = { ...process.env };
+      if (this.config.huggingfaceToken) {
+        env['HUGGINGFACE_TOKEN'] = this.config.huggingfaceToken;
+      }
+      const diarize = spawn(pythonBin, [this.config.diarizePath!, audioPath], { env });
       
       let stdout = '';
       let stderr = '';

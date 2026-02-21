@@ -6,6 +6,7 @@ interface Settings {
   apiUrl: string;
   whisperModel: string;
   enableDiarization: boolean;
+  huggingfaceToken?: string;
   autoAcceptJobs: boolean;
   notificationsEnabled: boolean;
 }
@@ -371,6 +372,50 @@ export function SettingsScreen() {
                 />
               </button>
             </div>
+
+            {/* HuggingFace token (needed once to download pyannote weights) */}
+            {localSettings.enableDiarization && (
+              <div className="space-y-1">
+                <label className="font-medium text-slate-200" htmlFor="hf-token">
+                  Token HuggingFace
+                </label>
+                <p className="text-sm text-slate-400">
+                  Necessário <strong>uma vez</strong> para baixar o modelo pyannote (roda local depois).
+                  {' '}Crie um token em{' '}
+                  <a
+                    href="https://huggingface.co/settings/tokens"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-400 underline"
+                  >
+                    huggingface.co/settings/tokens
+                  </a>
+                  {' '}e aceite os termos em{' '}
+                  <a
+                    href="https://huggingface.co/pyannote/speaker-diarization-3.1"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-400 underline"
+                  >
+                    pyannote/speaker-diarization-3.1
+                  </a>.
+                </p>
+                <input
+                  id="hf-token"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="hf_..."
+                  defaultValue={localSettings.huggingfaceToken ?? ''}
+                  onBlur={(e) => {
+                    const val = e.currentTarget.value.trim();
+                    if (val !== (localSettings.huggingfaceToken ?? '')) {
+                      handleChange('huggingfaceToken', val || undefined);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-dd-border bg-dd-bg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            )}
 
             {/* Auto Accept */}
             <div className="flex items-center justify-between">

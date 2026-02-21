@@ -2,6 +2,9 @@ import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Meeting, MeetingStatus, NoteBlock, NoteBlockType } from '../../shared/types';
+import { TranscriptViewer } from '../components/transcript/TranscriptViewer';
+import { AudioPlayerControlled } from '../components/transcript/AudioPlayerControlled';
+import type { AudioPlayerHandle } from '../components/transcript/AudioPlayerControlled';
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -34,106 +37,6 @@ function formatDurationDetail(sec: number): string {
   const s = sec % 60;
   if (m === 0) return `${s}s`;
   return s > 0 ? `${m}m ${s}s` : `${m} min`;
-}
-
-// ─── Transcript line parsing ──────────────────────────────────
-
-interface TranscriptLine {
-  hours: string | null;
-  minutes: string;
-  seconds: string;
-  speaker: string;
-  text: string;
-}
-
-const TRANSCRIPT_LINE_RE = /^(?:(\d+):)?(\d{2}):(\d{2})\s+([^:]+):\s+(.+)$/;
-
-function parseTranscript(raw: string): TranscriptLine[] {
-  const result: TranscriptLine[] = [];
-  for (const line of raw.split('\n')) {
-    const m = TRANSCRIPT_LINE_RE.exec(line.trim());
-    if (!m) continue;
-    result.push({
-      hours:   m[1] ?? null,
-      minutes: m[2],
-      seconds: m[3],
-      speaker: m[4].trim(),
-      text:    m[5].trim(),
-    });
-  }
-  return result;
-}
-
-function formatTimestamp(line: TranscriptLine): string {
-  if (line.hours) return `${line.hours}:${line.minutes}:${line.seconds}`;
-  return `${line.minutes}:${line.seconds}`;
-}
-
-// ─── Tab: Transcrição ─────────────────────────────────────────
-
-function TranscriptionTab({ meeting }: { meeting: Meeting }) {
-  const [search, setSearch] = useState('');
-
-  if (!meeting.transcriptText) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <svg className="h-12 w-12 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <p className="mt-4 text-slate-400">Nenhuma transcrição disponível.</p>
-      </div>
-    );
-  }
-
-  const lines = parseTranscript(meeting.transcriptText);
-
-  const filtered = lines.filter((l) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return l.speaker.toLowerCase().includes(q) || l.text.toLowerCase().includes(q);
-  });
-
-  return (
-    <div className="space-y-4">
-      {/* Search */}
-      <div className="relative">
-        <svg
-          className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar na transcrição..."
-          className="w-full rounded-lg border border-dd-border bg-dd-surface py-2 pl-9 pr-4 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
-
-      {/* Lines */}
-      {filtered.length === 0 && search.trim() ? (
-        <p className="text-center text-sm text-slate-500">Nenhum resultado encontrado.</p>
-      ) : filtered.length === 0 ? (
-        <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{meeting.transcriptText}</p>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((line, i) => (
-            <div key={i} className="rounded-lg border border-dd-border bg-dd-surface p-3">
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="font-medium text-sm text-indigo-400">{line.speaker}</span>
-                <span className="text-xs text-slate-500">{formatTimestamp(line)}</span>
-              </div>
-              <p className="text-sm text-slate-300 leading-relaxed">{line.text}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Tab: Notas ───────────────────────────────────────────────
@@ -413,6 +316,53 @@ function TranscribeButton({ meetingId, recordingUri }: { meetingId: string; reco
         status: 'DONE',
       });
 
+      // Persist structured segments + speakers if available
+      if (result.segments && result.segments.length > 0) {
+        // Clear old segments first
+        await window.electronAPI.db.deleteSegments(meetingId);
+
+        // Extract unique speakers and create MeetingSpeaker rows
+        const speakerLabels = [...new Set(
+          result.segments.map((s: { speaker?: string }) => s.speaker).filter(Boolean) as string[]
+        )];
+        const speakerMap = new Map<string, string>(); // label → speaker id
+        for (let i = 0; i < speakerLabels.length; i++) {
+          const speaker = await window.electronAPI.db.upsertMeetingSpeaker({
+            meetingId,
+            label: speakerLabels[i],
+            colorIndex: i % 8,
+            talkTimeSec: 0,
+          });
+          speakerMap.set(speakerLabels[i], speaker.id);
+        }
+
+        // Insert segments with speaker references
+        const segmentData = result.segments.map((s: { start: number; end: number; text: string; speaker?: string }, i: number) => ({
+          meetingId,
+          ordinal: i,
+          startSec: s.start,
+          endSec: s.end,
+          text: s.text,
+          speakerLabel: s.speaker ?? null,
+          speakerId: s.speaker ? (speakerMap.get(s.speaker) ?? null) : null,
+        }));
+        await window.electronAPI.db.insertSegmentsBatch(meetingId, segmentData);
+
+        // Update talk time stats per speaker
+        for (const [label, speakerId] of speakerMap) {
+          const talkTime = result.segments
+            .filter((s: { speaker?: string }) => s.speaker === label)
+            .reduce((sum: number, s: { start: number; end: number }) => sum + (s.end - s.start), 0);
+          await window.electronAPI.db.upsertMeetingSpeaker({
+            id: speakerId,
+            meetingId,
+            label,
+            colorIndex: speakerLabels.indexOf(label) % 8,
+            talkTimeSec: talkTime,
+          });
+        }
+      }
+
       try { await window.electronAPI.db.triggerSync(); } catch { /* best-effort */ }
 
       return result;
@@ -493,38 +443,6 @@ function TranscribeButton({ meetingId, recordingUri }: { meetingId: string; reco
   );
 }
 
-// ─── Audio player ────────────────────────────────────────────
-
-function AudioPlayer({ meetingId, recordingUri }: { meetingId: string; recordingUri?: string | null }) {
-  // Download audio through IPC to get a local file path (bypasses CORS)
-  const { data: localAudioPath, isLoading } = useQuery({
-    queryKey: ['audio-local', meetingId],
-    queryFn: () => window.electronAPI.api.downloadAudio(meetingId),
-    enabled: !recordingUri,
-    retry: 1,
-    staleTime: Infinity,
-  });
-
-  const src = recordingUri || localAudioPath;
-
-  if (isLoading) {
-    return (
-      <div className="rounded-lg border border-dd-border bg-dd-surface p-3 flex items-center gap-2">
-        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-indigo-400" />
-        <span className="text-xs text-slate-500">Carregando áudio...</span>
-      </div>
-    );
-  }
-
-  if (!src) return null;
-
-  return (
-    <div className="rounded-lg border border-dd-border bg-dd-surface p-3">
-      <audio controls src={src} className="w-full h-8" />
-    </div>
-  );
-}
-
 // ─── Reset status button ─────────────────────────────────────
 
 function ResetStatusButton({ meetingId }: { meetingId: string }) {
@@ -560,6 +478,7 @@ export function MeetingDetailScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('transcript');
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState('');
+  const audioRef = useRef<AudioPlayerHandle>(null);
 
   const { data: meeting, isLoading, error } = useQuery({
     queryKey: ['meeting', id],
@@ -742,7 +661,7 @@ export function MeetingDetailScreen() {
 
         {/* Audio player */}
         <div className="mt-3">
-          <AudioPlayer meetingId={meeting.id} recordingUri={meeting.recordingUri} />
+          <AudioPlayerControlled ref={audioRef} meetingId={meeting.id} recordingUri={meeting.recordingUri} />
         </div>
 
         {/* Tab bar */}
@@ -765,7 +684,7 @@ export function MeetingDetailScreen() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-auto px-6 py-6">
-        {activeTab === 'transcript' && <TranscriptionTab meeting={meeting} />}
+        {activeTab === 'transcript' && <TranscriptViewer meeting={meeting} audioRef={audioRef} />}
         {activeTab === 'notes'      && <NotesTab meetingId={meeting.id} />}
         {activeTab === 'summary'    && <SummaryTab meetingId={meeting.id} />}
       </div>
