@@ -69,12 +69,21 @@ export const AudioPlayerControlled = forwardRef<AudioPlayerHandle, AudioPlayerCo
 
     const handlePlay = useCallback(() => setIsPlaying(true), []);
     const handlePause = useCallback(() => setIsPlaying(false), []);
+    const handleError = useCallback(() => {
+      const audio = audioRef.current;
+      if (audio?.error) {
+        console.error('[AudioPlayer] error:', audio.error.code, audio.error.message, 'src:', src);
+      }
+    }, [src]);
 
     const togglePlay = () => {
       const audio = audioRef.current;
-      if (!audio) return;
-      if (audio.paused) audio.play();
-      else audio.pause();
+      if (!audio || !src) return;
+      if (audio.paused) {
+        audio.play().catch((err) => console.error('[AudioPlayer] play failed:', err));
+      } else {
+        audio.pause();
+      }
     };
 
     const handleSeekBar = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,6 +122,8 @@ export const AudioPlayerControlled = forwardRef<AudioPlayerHandle, AudioPlayerCo
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={handlePlay}
           onPause={handlePause}
+          onError={handleError}
+          preload="metadata"
           className="hidden"
         />
         <div className="flex items-center gap-3">
