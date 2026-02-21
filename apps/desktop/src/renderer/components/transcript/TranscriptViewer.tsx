@@ -89,9 +89,10 @@ function groupByTimeGaps(segments: TranscriptSegment[], gapThreshold = 2): Trans
 interface TranscriptViewerProps {
   meeting: Meeting;
   audioRef: React.RefObject<AudioPlayerHandle | null>;
+  onRetranscribe?: () => void;
 }
 
-export function TranscriptViewer({ meeting, audioRef }: TranscriptViewerProps) {
+export function TranscriptViewer({ meeting, audioRef, onRetranscribe }: TranscriptViewerProps) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
@@ -228,7 +229,7 @@ export function TranscriptViewer({ meeting, audioRef }: TranscriptViewerProps) {
   // ─── Legacy text display ──────────────────────────────────
 
   if (hasLegacyText) {
-    return <LegacyTranscriptView text={meeting.transcriptText!} search={search} onSearchChange={setSearch} />;
+    return <LegacyTranscriptView text={meeting.transcriptText!} search={search} onSearchChange={setSearch} onRetranscribe={onRetranscribe} />;
   }
 
   // ─── Structured segment display ───────────────────────────
@@ -398,10 +399,12 @@ function LegacyTranscriptView({
   text,
   search,
   onSearchChange,
+  onRetranscribe,
 }: {
   text: string;
   search: string;
   onSearchChange: (v: string) => void;
+  onRetranscribe?: () => void;
 }) {
   const lines = useMemo(() => parseLegacyTranscript(text), [text]);
 
@@ -421,9 +424,17 @@ function LegacyTranscriptView({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <p className="text-xs text-amber-300">
+        <p className="flex-1 text-xs text-amber-300">
           Formato legado. Re-transcreva para ter recursos interativos (click-to-seek, gestão de speakers).
         </p>
+        {onRetranscribe && (
+          <button
+            onClick={onRetranscribe}
+            className="shrink-0 rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-500"
+          >
+            Re-transcrever
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 && search.trim() ? (

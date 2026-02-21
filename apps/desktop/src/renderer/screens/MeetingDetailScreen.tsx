@@ -249,14 +249,24 @@ function SummaryTab({ meetingId }: { meetingId: string }) {
 
 // ─── Transcribe button (unified: Whisper local + OpenAI) ──────
 
-function TranscribeButton({ meetingId, recordingUri }: { meetingId: string; recordingUri?: string | null }) {
+function TranscribeButton({ meetingId, recordingUri, hasTranscript, externalOpen, onOpenChange }: {
+  meetingId: string;
+  recordingUri?: string | null;
+  hasTranscript?: boolean;
+  externalOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen ?? internalOpen;
+  const setOpen = (v: boolean) => { setInternalOpen(v); onOpenChange?.(v); };
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['meeting', meetingId] });
     queryClient.invalidateQueries({ queryKey: ['meetings'] });
+    queryClient.invalidateQueries({ queryKey: ['segments', meetingId] });
+    queryClient.invalidateQueries({ queryKey: ['speakers', meetingId] });
   };
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -396,7 +406,7 @@ function TranscribeButton({ meetingId, recordingUri }: { meetingId: string; reco
             {statusMsg ?? 'Transcrevendo...'}
           </span>
         ) : (
-          'Transcrever'
+          hasTranscript ? 'Re-transcrever' : 'Transcrever'
         )}
       </button>
 
@@ -479,6 +489,7 @@ export function MeetingDetailScreen() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState('');
   const audioRef = useRef<AudioPlayerHandle>(null);
+  const [transcribeOpen, setTranscribeOpen] = useState(false);
 
   const { data: meeting, isLoading, error } = useQuery({
     queryKey: ['meeting', id],
@@ -628,8 +639,8 @@ export function MeetingDetailScreen() {
               <ResetStatusButton meetingId={meeting.id} />
             )}
 
-            {!meeting.transcriptText && meeting.status !== 'PROCESSING' && (
-              <TranscribeButton meetingId={meeting.id} recordingUri={meeting.recordingUri} />
+            {meeting.status !== 'PROCESSING' && (
+              <TranscribeButton meetingId={meeting.id} recordingUri={meeting.recordingUri} hasTranscript={!!meeting.transcriptText} externalOpen={transcribeOpen} onOpenChange={setTranscribeOpen} />
             )}
           </div>
         </div>
@@ -684,7 +695,7 @@ export function MeetingDetailScreen() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-auto px-6 py-6">
-        {activeTab === 'transcript' && <TranscriptViewer meeting={meeting} audioRef={audioRef} />}
+        {activeTab === 'transcript' && <TranscriptViewer meeting={meeting} audioRef={audioRef} onRetranscribe={() => setTranscribeOpen(true)} />}
         {activeTab === 'notes'      && <NotesTab meetingId={meeting.id} />}
         {activeTab === 'summary'    && <SummaryTab meetingId={meeting.id} />}
       </div>
