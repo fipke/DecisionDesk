@@ -66,8 +66,11 @@ def diarize(audio_path: str, hf_token: str = None) -> dict:
     pipeline.to(device)
 
     # Run diarization
-    diarization = pipeline(audio_path)
-    
+    result = pipeline(audio_path)
+
+    # pyannote v4.x returns DiarizeOutput; v3.x returns Annotation directly
+    diarization = getattr(result, 'speaker_diarization', result)
+
     # Convert to segments
     segments = []
     for turn, _, speaker in diarization.itertracks(yield_label=True):
