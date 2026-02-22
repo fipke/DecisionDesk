@@ -9,6 +9,7 @@ interface Settings {
   huggingfaceToken?: string;
   autoAcceptJobs: boolean;
   notificationsEnabled: boolean;
+  preferLocal: boolean;
 }
 
 // ─── AI Settings types (matches backend REST API) ────────────────────────────
@@ -155,17 +156,31 @@ export function SettingsScreen() {
   const [aiSaveSuccess, setAiSaveSuccess] = useState(false);
   const [ollamaActionLoading, setOllamaActionLoading] = useState<string | null>(null);
 
-  /** Load AI settings + Ollama status from backend. */
+  /** Load AI settings + Ollama status. Falls back to local electron-store if backend is offline. */
   const refreshAiData = useCallback(async () => {
     setAiLoading(true);
     setAiError(null);
     try {
-      const [aiRes, ollamaRes] = await Promise.all([
-        fetchAiSettings(),
-        fetchOllamaStatus(),
-      ]);
-      setAiConfig(aiRes.config);
+      const ollamaRes = await fetchOllamaStatus();
       setOllamaStatus(ollamaRes);
+
+      // Try backend first, fall back to local electron-store
+      try {
+        const aiRes = await fetchAiSettings();
+        setAiConfig(aiRes.config);
+      } catch {
+        // Backend offline — load from local electron-store
+        const localSettings = await window.electronAPI.settings.get();
+        const local = (localSettings as any).aiConfig;
+        if (local) {
+          setAiConfig(prev => ({
+            ...prev,
+            summarization: local.summarization ?? prev.summarization,
+            extraction: local.extraction ?? prev.extraction,
+            chat: local.chat ?? prev.chat,
+          }));
+        }
+      }
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Erro ao carregar configurações de IA');
     } finally {
@@ -177,14 +192,27 @@ export function SettingsScreen() {
     refreshAiData();
   }, [refreshAiData]);
 
-  /** Save AI config to backend. */
+  /** Save AI config to backend + persist locally in electron-store. */
   const handleSaveAiSettings = async () => {
     setAiSaving(true);
     setAiError(null);
     setAiSaveSuccess(false);
     try {
-      const res = await saveAiSettings(aiConfig);
-      setAiConfig(res.config);
+      // Always persist locally (works offline)
+      await window.electronAPI.settings.set('aiConfig', {
+        summarization: aiConfig.summarization,
+        extraction: aiConfig.extraction,
+        chat: aiConfig.chat,
+      });
+
+      // Try to also save to backend (best-effort)
+      try {
+        const res = await saveAiSettings(aiConfig);
+        setAiConfig(res.config);
+      } catch {
+        // Backend offline — local save is enough
+      }
+
       setAiSaveSuccess(true);
       setTimeout(() => setAiSaveSuccess(false), 3000);
     } catch (err) {
@@ -477,6 +505,28 @@ export function SettingsScreen() {
             </div>
           ) : (
             <div className="mt-4 space-y-5">
+              {/* Prefer Local toggle */}
+              <div className="flex items-center justify-between rounded-lg border border-dd-border bg-dd-elevated p-4">
+                <div>
+                  <span className="font-medium text-slate-200">Preferir processamento local</span>
+                  <p className="text-sm text-slate-400">
+                    Usar Ollama como provedor padrão para chat e resumos
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleChange('preferLocal', !localSettings.preferLocal)}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    localSettings.preferLocal ? 'bg-indigo-600' : 'bg-dd-border'
+                  }`}
+                >
+                  <span
+                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                      localSettings.preferLocal ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
               {/* Ollama Status */}
               {ollamaStatus.running ? (
                 <div className="flex items-center gap-2">

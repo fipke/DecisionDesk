@@ -11,7 +11,8 @@ import type {
   Meeting, Folder, MeetingType, Person, MeetingPerson,
   NoteBlock, Summary, MeetingSeries, MeetingSeriesEntry,
   Template, SyncQueueItem, SyncAction,
-  TranscriptSegment, MeetingSpeaker
+  TranscriptSegment, MeetingSpeaker,
+  ActionItem, ExtractedActionItem
 } from '../shared/types';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -41,7 +42,7 @@ export function listMeetings(): Meeting[] {
   const rows = db.prepare(
     `SELECT id, remote_id, created_at, status, recording_uri,
             transcript_text, language, cost_usd, cost_brl, minutes, duration_sec,
-            folder_id, meeting_type_id, tags, title, updated_at
+            folder_id, meeting_type_id, tags, title, summary_snippet, updated_at
      FROM meetings ORDER BY datetime(created_at) DESC`
   ).all() as any[];
 
@@ -53,7 +54,7 @@ export function listMeetingsByFolder(folderId: string): Meeting[] {
   const rows = db.prepare(
     `SELECT id, remote_id, created_at, status, recording_uri,
             transcript_text, language, cost_usd, cost_brl, minutes, duration_sec,
-            folder_id, meeting_type_id, tags, title, updated_at
+            folder_id, meeting_type_id, tags, title, summary_snippet, updated_at
      FROM meetings WHERE folder_id = ? ORDER BY datetime(created_at) DESC`
   ).all(folderId) as any[];
 
@@ -65,7 +66,7 @@ export function getMeeting(id: string): Meeting | null {
   const row = db.prepare(
     `SELECT id, remote_id, created_at, status, recording_uri,
             transcript_text, language, cost_usd, cost_brl, minutes, duration_sec,
-            folder_id, meeting_type_id, tags, title, updated_at
+            folder_id, meeting_type_id, tags, title, summary_snippet, updated_at
      FROM meetings WHERE id = ?`
   ).get(id) as any | undefined;
 
@@ -79,8 +80,8 @@ export function upsertMeeting(meeting: Partial<Meeting> & { id?: string }, enque
 
   db.prepare(`
     INSERT INTO meetings (id, remote_id, created_at, status, recording_uri, transcript_text, language,
-                          cost_usd, cost_brl, minutes, duration_sec, folder_id, meeting_type_id, tags, title, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          cost_usd, cost_brl, minutes, duration_sec, folder_id, meeting_type_id, tags, title, summary_snippet, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       remote_id = excluded.remote_id,
       status = excluded.status,
@@ -95,6 +96,7 @@ export function upsertMeeting(meeting: Partial<Meeting> & { id?: string }, enque
       meeting_type_id = excluded.meeting_type_id,
       tags = excluded.tags,
       title = excluded.title,
+      summary_snippet = excluded.summary_snippet,
       updated_at = excluded.updated_at
   `).run(
     id,
@@ -112,6 +114,7 @@ export function upsertMeeting(meeting: Partial<Meeting> & { id?: string }, enque
     meeting.meetingTypeId ?? null,
     meeting.tags ? JSON.stringify(meeting.tags) : '{}',
     meeting.title ?? null,
+    meeting.summarySnippet ?? null,
     meeting.updatedAt ?? ts
   );
 
@@ -149,8 +152,58 @@ function mapMeetingRow(row: any): Meeting {
     meetingTypeName: row.meeting_type_name ?? null,
     tags: row.tags ? JSON.parse(row.tags) : {},
     title: row.title ?? null,
+    summarySnippet: row.summary_snippet ?? null,
     updatedAt: row.updated_at ?? null
   };
+}
+
+export function updateSummarySnippet(meetingId: string, snippet: string): void {
+  const db = getDatabase();
+  db.prepare('UPDATE meetings SET summary_snippet = ?, updated_at = ? WHERE id = ?')
+    .run(snippet, now(), meetingId);
+}
+
+export function listAllTags(): string[] {
+  const db = getDatabase();
+  const rows = db.prepare("SELECT tags FROM meetings WHERE tags != '{}' AND tags IS NOT NULL").all() as any[];
+  const tagSet = new Set<string>();
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.tags || '{}');
+      for (const v of Object.values(parsed)) {
+        if (v) tagSet.add(v as string);
+      }
+    } catch { /* skip malformed */ }
+  }
+  return [...tagSet].sort();
+}
+
+export interface PersonMeetingRow {
+  meetingId: string;
+  title: string | null;
+  createdAt: string;
+  role: string;
+  talkTimeSec: number;
+}
+
+export function listMeetingsForPerson(personId: string): PersonMeetingRow[] {
+  const db = getDatabase();
+  const rows = db.prepare(`
+    SELECT m.id as meeting_id, m.title, m.created_at, mp.role,
+           COALESCE(ms.talk_time_sec, 0) as talk_time_sec
+    FROM meeting_people mp
+    JOIN meetings m ON m.id = mp.meeting_id
+    LEFT JOIN meeting_speakers ms ON ms.meeting_id = m.id AND ms.person_id = mp.person_id
+    WHERE mp.person_id = ?
+    ORDER BY m.created_at DESC
+  `).all(personId) as any[];
+  return rows.map(r => ({
+    meetingId: r.meeting_id,
+    title: r.title,
+    createdAt: r.created_at,
+    role: r.role,
+    talkTimeSec: r.talk_time_sec,
+  }));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -588,37 +641,61 @@ export function addSeriesEntry(entry: MeetingSeriesEntry): void {
 // Templates
 // ═══════════════════════════════════════════════════════════════
 
-export function listTemplates(): Template[] {
-  const db = getDatabase();
-  const rows = db.prepare('SELECT * FROM templates ORDER BY name').all() as any[];
-  return rows.map((r) => ({
+function mapTemplateRow(r: any): Template {
+  return {
     id: r.id,
     name: r.name,
     bodyMarkdown: r.body_markdown,
+    description: r.description ?? undefined,
+    systemPrompt: r.system_prompt ?? undefined,
+    userPromptTemplate: r.user_prompt_template ?? undefined,
+    outputFormat: r.output_format ?? undefined,
+    model: r.model ?? undefined,
+    maxTokens: r.max_tokens ?? undefined,
+    temperature: r.temperature ?? undefined,
+    isDefault: r.is_default === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at
-  }));
+  };
 }
 
-export function upsertTemplate(t: Partial<Template> & { name: string; bodyMarkdown: string }, enqueueSync = true): Template {
+export function listTemplates(): Template[] {
+  const db = getDatabase();
+  const rows = db.prepare('SELECT * FROM templates ORDER BY name').all() as any[];
+  return rows.map(mapTemplateRow);
+}
+
+export function upsertTemplate(t: Partial<Template> & { name: string }, enqueueSync = true): Template {
   const db = getDatabase();
   const id = t.id || uuid();
   const ts = now();
 
   db.prepare(`
-    INSERT INTO templates (id, name, body_markdown, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO templates (id, name, body_markdown, description, system_prompt, user_prompt_template, output_format, model, max_tokens, temperature, is_default, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       body_markdown = excluded.body_markdown,
+      description = excluded.description,
+      system_prompt = excluded.system_prompt,
+      user_prompt_template = excluded.user_prompt_template,
+      output_format = excluded.output_format,
+      model = excluded.model,
+      max_tokens = excluded.max_tokens,
+      temperature = excluded.temperature,
+      is_default = excluded.is_default,
       updated_at = excluded.updated_at
-  `).run(id, t.name, t.bodyMarkdown, t.createdAt ?? ts, t.updatedAt ?? ts);
+  `).run(
+    id, t.name, t.bodyMarkdown ?? '',
+    t.description ?? '', t.systemPrompt ?? '', t.userPromptTemplate ?? '',
+    t.outputFormat ?? 'markdown', t.model ?? 'qwen3:14b',
+    t.maxTokens ?? 2000, t.temperature ?? 0.3,
+    t.isDefault ? 1 : 0,
+    t.createdAt ?? ts, t.updatedAt ?? ts
+  );
 
   const saved = db.prepare('SELECT * FROM templates WHERE id = ?').get(id) as any;
-  const result: Template = {
-    id: saved.id, name: saved.name, bodyMarkdown: saved.body_markdown,
-    createdAt: saved.created_at, updatedAt: saved.updated_at
-  };
+  const result = mapTemplateRow(saved);
 
   if (enqueueSync) {
     enqueue(db, 'templates', id, t.id ? 'UPDATE' : 'CREATE', result as any);
@@ -818,6 +895,200 @@ function mapSegmentRow(row: any): TranscriptSegment {
     speakerLabel: row.speaker_label ?? null,
     speakerId: row.speaker_id ?? null,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Action Items
+// ═══════════════════════════════════════════════════════════════
+
+function mapActionItemRow(row: any): ActionItem {
+  return {
+    id: row.id,
+    meetingId: row.meeting_id,
+    seriesId: row.series_id ?? null,
+    content: row.content,
+    assigneeName: row.assignee_name ?? null,
+    assigneeId: row.assignee_id ?? null,
+    dueDate: row.due_date ?? null,
+    status: row.status,
+    resolvedAt: row.resolved_at ?? null,
+    resolvedInMeetingId: row.resolved_in_meeting_id ?? null,
+    ordinal: row.ordinal,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    meetingTitle: row.meeting_title ?? undefined,
+    meetingCreatedAt: row.meeting_created_at ?? undefined,
+  };
+}
+
+export function listActionItems(meetingId: string): ActionItem[] {
+  const db = getDatabase();
+  const rows = db.prepare(
+    'SELECT * FROM action_items WHERE meeting_id = ? ORDER BY ordinal'
+  ).all(meetingId) as any[];
+  return rows.map(mapActionItemRow);
+}
+
+export function listOpenActionItemsForSeries(seriesId: string): ActionItem[] {
+  const db = getDatabase();
+  const rows = db.prepare(
+    `SELECT ai.*, m.title as meeting_title, m.created_at as meeting_created_at
+     FROM action_items ai
+     JOIN meetings m ON m.id = ai.meeting_id
+     WHERE ai.series_id = ? AND ai.status = 'open'
+     ORDER BY m.created_at ASC, ai.ordinal ASC`
+  ).all(seriesId) as any[];
+  return rows.map(mapActionItemRow);
+}
+
+export function upsertActionItem(
+  item: Partial<ActionItem> & { meetingId: string; content: string },
+  enqueueSync = true
+): ActionItem {
+  const db = getDatabase();
+  const id = item.id || uuid();
+  const ts = now();
+  let ordinal = item.ordinal;
+  if (ordinal === undefined) {
+    const max = db.prepare(
+      'SELECT MAX(ordinal) as maxOrd FROM action_items WHERE meeting_id = ?'
+    ).get(item.meetingId) as any;
+    ordinal = (max?.maxOrd ?? -1) + 1;
+  }
+  db.prepare(`
+    INSERT INTO action_items (id, meeting_id, series_id, content, assignee_name, assignee_id,
+                               due_date, status, resolved_at, resolved_in_meeting_id, ordinal, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      content = excluded.content,
+      assignee_name = excluded.assignee_name,
+      assignee_id = excluded.assignee_id,
+      due_date = excluded.due_date,
+      status = excluded.status,
+      resolved_at = excluded.resolved_at,
+      resolved_in_meeting_id = excluded.resolved_in_meeting_id,
+      ordinal = excluded.ordinal,
+      updated_at = excluded.updated_at
+  `).run(
+    id, item.meetingId, item.seriesId ?? null,
+    item.content, item.assigneeName ?? null, item.assigneeId ?? null,
+    item.dueDate ?? null, item.status ?? 'open',
+    item.resolvedAt ?? null, item.resolvedInMeetingId ?? null,
+    ordinal, item.createdAt ?? ts, ts
+  );
+  const saved = db.prepare('SELECT * FROM action_items WHERE id = ?').get(id) as any;
+  const result = mapActionItemRow(saved);
+  if (enqueueSync) {
+    enqueue(db, 'action_items', id, item.id ? 'UPDATE' : 'CREATE', result as any);
+  }
+  return result;
+}
+
+export function toggleActionItemStatus(id: string, resolvedInMeetingId: string): ActionItem {
+  const db = getDatabase();
+  const existing = db.prepare('SELECT * FROM action_items WHERE id = ?').get(id) as any;
+  if (!existing) throw new Error(`Action item ${id} not found`);
+  const newStatus = existing.status === 'open' ? 'done' : 'open';
+  const ts = now();
+  db.prepare(`
+    UPDATE action_items SET status = ?, resolved_at = ?, resolved_in_meeting_id = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    newStatus,
+    newStatus === 'done' ? ts : null,
+    newStatus === 'done' ? resolvedInMeetingId : null,
+    ts, id
+  );
+  const saved = db.prepare('SELECT * FROM action_items WHERE id = ?').get(id) as any;
+  const result = mapActionItemRow(saved);
+  enqueue(db, 'action_items', id, 'UPDATE', result as any);
+  return result;
+}
+
+export function deleteActionItem(id: string): void {
+  const db = getDatabase();
+  db.prepare('DELETE FROM action_items WHERE id = ?').run(id);
+  enqueue(db, 'action_items', id, 'DELETE', { id });
+}
+
+export function insertActionItemsBatch(
+  meetingId: string,
+  seriesId: string | null,
+  items: ExtractedActionItem[],
+  people: Person[]
+): ActionItem[] {
+  const db = getDatabase();
+  const ts = now();
+  const results: ActionItem[] = [];
+
+  const stmt = db.prepare(`
+    INSERT INTO action_items (id, meeting_id, series_id, content, assignee_name, assignee_id,
+                               due_date, status, ordinal, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
+  `);
+
+  db.transaction(() => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const id = uuid();
+      let assigneeId: string | null = null;
+      if (item.assignee) {
+        const match = people.find(p =>
+          p.displayName.toLowerCase() === item.assignee!.toLowerCase() ||
+          (p.fullName && p.fullName.toLowerCase() === item.assignee!.toLowerCase())
+        );
+        if (match) assigneeId = match.id;
+      }
+      stmt.run(id, meetingId, seriesId, item.content, item.assignee ?? null,
+               assigneeId, item.dueDate ?? null, i, ts, ts);
+      results.push({
+        id, meetingId, seriesId, content: item.content,
+        assigneeName: item.assignee ?? null, assigneeId,
+        dueDate: item.dueDate ?? null, status: 'open',
+        resolvedAt: null, resolvedInMeetingId: null,
+        ordinal: i, createdAt: ts, updatedAt: ts
+      });
+    }
+  })();
+
+  if (results.length > 0) {
+    enqueue(db, 'action_items', meetingId, 'CREATE', { meetingId, count: results.length });
+  }
+  return results;
+}
+
+export function getSeriesIdForMeeting(meetingId: string): string | null {
+  const db = getDatabase();
+  const row = db.prepare(
+    'SELECT series_id FROM meeting_series_entries WHERE meeting_id = ? LIMIT 1'
+  ).get(meetingId) as any | undefined;
+  return row?.series_id ?? null;
+}
+
+// ─── Enhanced series entry management (with sync) ────────────
+
+export function addSeriesEntryWithSync(entry: MeetingSeriesEntry): void {
+  const db = getDatabase();
+  db.prepare(`
+    INSERT OR IGNORE INTO meeting_series_entries (meeting_id, series_id, ordinal) VALUES (?, ?, ?)
+  `).run(entry.meetingId, entry.seriesId, entry.ordinal);
+  enqueue(db, 'meeting_series_entries', `${entry.meetingId}:${entry.seriesId}`, 'CREATE', entry as any);
+}
+
+export function removeSeriesEntry(meetingId: string, seriesId: string): void {
+  const db = getDatabase();
+  db.prepare(
+    'DELETE FROM meeting_series_entries WHERE meeting_id = ? AND series_id = ?'
+  ).run(meetingId, seriesId);
+  enqueue(db, 'meeting_series_entries', `${meetingId}:${seriesId}`, 'DELETE', { meetingId, seriesId });
+}
+
+export function getNextOrdinalForSeries(seriesId: string): number {
+  const db = getDatabase();
+  const row = db.prepare(
+    'SELECT MAX(ordinal) as maxOrd FROM meeting_series_entries WHERE series_id = ?'
+  ).get(seriesId) as any;
+  return (row?.maxOrd ?? -1) + 1;
 }
 
 // ═══════════════════════════════════════════════════════════════

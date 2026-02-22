@@ -214,6 +214,37 @@ export function TranscriptViewer({ meeting, audioRef, onRetranscribe }: Transcri
   const hasSpeakers = speakers.length > 0;
   const hasLegacyText = !hasSegments && !!meeting.transcriptText;
 
+  const totalDuration = speakers.reduce((sum, s) => sum + s.talkTimeSec, 0) || (meeting.durationSec ?? 0);
+
+  // Filter segments
+  const filtered = segments.filter((seg) => {
+    if (speakerFilter && seg.speakerId !== speakerFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const speaker = speakers.find(s => s.id === seg.speakerId);
+      const speakerName = speaker?.displayName ?? speaker?.label ?? '';
+      return seg.text.toLowerCase().includes(q) || speakerName.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  // Find active segment — exact match first, then nearest preceding segment
+  // IMPORTANT: This hook must be called before any early returns (React rules of hooks)
+  const activeSegmentId = useMemo(() => {
+    if (filtered.length === 0) return null;
+    const exact = filtered.find(s => s.startSec <= currentTime && currentTime < s.endSec);
+    if (exact) return exact.id;
+    // If in a gap, find the last segment that started before currentTime
+    let best: TranscriptSegment | null = null;
+    for (const s of filtered) {
+      if (s.endSec <= currentTime) best = s;
+      else break;
+    }
+    // Only highlight if we're within 3s after the segment ended (avoid stale highlights)
+    if (best && currentTime - best.endSec < 3) return best.id;
+    return null;
+  }, [filtered, currentTime]);
+
   if (!hasSegments && !hasLegacyText) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
@@ -233,25 +264,6 @@ export function TranscriptViewer({ meeting, audioRef, onRetranscribe }: Transcri
   }
 
   // ─── Structured segment display ───────────────────────────
-
-  const totalDuration = speakers.reduce((sum, s) => sum + s.talkTimeSec, 0) || (meeting.durationSec ?? 0);
-
-  // Filter segments
-  const filtered = segments.filter((seg) => {
-    if (speakerFilter && seg.speakerId !== speakerFilter) return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      const speaker = speakers.find(s => s.id === seg.speakerId);
-      const speakerName = speaker?.displayName ?? speaker?.label ?? '';
-      return seg.text.toLowerCase().includes(q) || speakerName.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  // Find active segment
-  const activeSegmentId = filtered.find(
-    s => s.startSec <= currentTime && currentTime < s.endSec
-  )?.id ?? null;
 
   if (hasSpeakers) {
     // ── With diarization: two-column layout ──

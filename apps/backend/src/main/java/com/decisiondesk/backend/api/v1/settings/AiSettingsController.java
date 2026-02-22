@@ -29,9 +29,9 @@ public class AiSettingsController {
     private static final String DEFAULT_USER = "default";
     private static final String DEFAULT_AI_CONFIG = """
             {
-                "summarization": {"provider": "ollama", "model": "qwen2.5:14b"},
-                "extraction": {"provider": "ollama", "model": "qwen3:8b"},
-                "chat": {"provider": "ollama", "model": "qwen2.5:14b"},
+                "summarization": {"provider": "ollama", "model": "qwen3:14b"},
+                "extraction": {"provider": "ollama", "model": "qwen3:14b"},
+                "chat": {"provider": "ollama", "model": "qwen3:14b"},
                 "openaiEnabled": false
             }""";
 
@@ -59,9 +59,9 @@ public class AiSettingsController {
             return new AiSettingsResponse(config, ollamaClient.isAvailable());
         } catch (JsonProcessingException e) {
             Map<String, Object> fallback = Map.of(
-                    "summarization", Map.of("provider", "ollama", "model", "qwen2.5:14b"),
-                    "extraction", Map.of("provider", "ollama", "model", "qwen3:8b"),
-                    "chat", Map.of("provider", "ollama", "model", "qwen2.5:14b"),
+                    "summarization", Map.of("provider", "ollama", "model", "qwen3:14b"),
+                    "extraction", Map.of("provider", "ollama", "model", "qwen3:14b"),
+                    "chat", Map.of("provider", "ollama", "model", "qwen3:14b"),
                     "openaiEnabled", false
             );
             return new AiSettingsResponse(fallback, ollamaClient.isAvailable());

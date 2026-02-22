@@ -1,10 +1,46 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect, Component, type ErrorInfo, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
 import type { Meeting, MeetingStatus, NoteBlock, NoteBlockType } from '../../shared/types';
 import { TranscriptViewer } from '../components/transcript/TranscriptViewer';
 import { AudioPlayerControlled } from '../components/transcript/AudioPlayerControlled';
 import type { AudioPlayerHandle } from '../components/transcript/AudioPlayerControlled';
+import { MeetingChatPanel } from '../components/MeetingChatPanel';
+import { FolderPicker } from '../components/FolderPicker';
+import { MeetingTypePicker } from '../components/MeetingTypePicker';
+import { TagEditor } from '../components/TagEditor';
+import { SeriesPicker } from '../components/SeriesPicker';
+import { ActionItemsTab } from '../components/ActionItemsTab';
+
+// ─── Error boundary ──────────────────────────────────────────
+
+export class ScreenErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[MeetingDetail] React crash:', error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-full items-center justify-center p-8">
+          <div className="text-center max-w-md">
+            <p className="text-red-400 font-medium">Erro ao renderizar a tela</p>
+            <p className="mt-2 text-xs text-slate-500 font-mono break-all">{this.state.error.message}</p>
+            <button
+              onClick={() => this.setState({ error: null })}
+              className="mt-4 rounded-lg bg-dd-elevated px-4 py-2 text-sm text-slate-100 hover:bg-dd-surface"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -155,29 +191,159 @@ function NotesTab({ meetingId }: { meetingId: string }) {
 
 // ─── Tab: Resumo ──────────────────────────────────────────────
 
-function SummaryTab({ meetingId }: { meetingId: string }) {
+function SummaryTab({ meetingId, hasTranscript }: { meetingId: string; hasTranscript: boolean }) {
   const queryClient = useQueryClient();
+  const [provider, setProvider] = useState<'local' | 'cloud'>('local');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
+  const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'rendered' | 'raw'>('rendered');
+  const [copied, setCopied] = useState(false);
+  const [useCustomPrompt, setUseCustomPrompt] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const generateRef = useRef<HTMLDivElement>(null);
 
-  const { data: summary, isLoading: loadingSummary } = useQuery({
-    queryKey: ['summary', meetingId],
-    queryFn: () => window.electronAPI.api.fetchSummary(meetingId),
+  const handleCopy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, []);
+
+  // Local summaries from SQLite (always works offline)
+  const { data: summaries = [], isLoading: loadingSummaries } = useQuery({
+    queryKey: ['summaries', meetingId],
+    queryFn: () => window.electronAPI.db.listSummaries(meetingId),
   });
 
+  // Templates from local SQLite (seeded + pulled from backend)
   const { data: templates = [] } = useQuery({
-    queryKey: ['api-templates'],
-    queryFn: () => window.electronAPI.api.fetchTemplates(),
+    queryKey: ['local-templates'],
+    queryFn: () => window.electronAPI.db.listTemplates(),
   });
 
-  const generateMutation = useMutation({
+  // Ollama availability
+  const { data: ollamaAvailable = false } = useQuery({
+    queryKey: ['ollama-check'],
+    queryFn: () => window.electronAPI.ollama.check(),
+    refetchInterval: 30_000,
+  });
+
+  // Settings (for aiConfig local model)
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => window.electronAPI.settings.get(),
+  });
+
+  // Pull summary from backend on mount (best-effort)
+  useQuery({
+    queryKey: ['pull-summary', meetingId],
+    queryFn: () => window.electronAPI.sync.pullSummary(meetingId),
+    staleTime: 60_000,
+  });
+
+  // Read preferLocal setting to set initial provider
+  useEffect(() => {
+    if (settings) {
+      setProvider((settings as any).preferLocal ? 'local' : 'cloud');
+    }
+  }, [(settings as any)?.preferLocal]);
+
+  // Auto-select default template
+  useState(() => {
+    window.electronAPI.db.listTemplates().then(tpls => {
+      const def = tpls.find(t => t.isDefault);
+      if (def) setSelectedTemplateId(def.id);
+    });
+  });
+
+  // Auto-select latest summary when summaries load
+  useState(() => {
+    if (summaries.length > 0 && !selectedSummaryId) {
+      const latest = summaries.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+      setSelectedSummaryId(latest.id);
+    }
+  });
+
+  // Keep selection in sync
+  const sortedSummaries = [...summaries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const selectedSummary = summaries.find(s => s.id === selectedSummaryId) ?? null;
+
+  // Reset viewMode when switching summary tabs
+  const selectSummary = useCallback((id: string) => {
+    setSelectedSummaryId(id);
+    setViewMode('rendered');
+    setCopied(false);
+  }, []);
+
+  // Auto-select latest on new data
+  if (summaries.length > 0 && !selectedSummary) {
+    const latest = summaries.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+    setSelectedSummaryId(latest.id);
+  }
+
+  // Generate via local Ollama (template)
+  const localMutation = useMutation({
     mutationFn: (templateId?: string) =>
-      window.electronAPI.api.generateSummary(meetingId, templateId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['summary', meetingId] });
+      window.electronAPI.ollama.generateSummary(meetingId, templateId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['summaries', meetingId] });
+      if (result?.id) setSelectedSummaryId(result.id);
     },
   });
 
-  if (loadingSummary) {
+  // Generate via backend (cloud, template)
+  const cloudMutation = useMutation({
+    mutationFn: (templateId?: string) =>
+      window.electronAPI.api.generateSummary(meetingId, templateId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['summaries', meetingId] });
+      if (result?.id) setSelectedSummaryId(result.id);
+    },
+  });
+
+  // Generate via local Ollama (custom prompt)
+  const customLocalMutation = useMutation({
+    mutationFn: (prompt: string) =>
+      window.electronAPI.ollama.generateSummaryCustom(meetingId, prompt),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['summaries', meetingId] });
+      if (result?.id) setSelectedSummaryId(result.id);
+    },
+  });
+
+  // Generate via backend (cloud, custom prompt)
+  const customCloudMutation = useMutation({
+    mutationFn: (prompt: string) =>
+      window.electronAPI.api.generateSummaryCustom(meetingId, prompt),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['summaries', meetingId] });
+      if (result?.id) setSelectedSummaryId(result.id);
+    },
+  });
+
+  const isPending = localMutation.isPending || cloudMutation.isPending
+    || customLocalMutation.isPending || customCloudMutation.isPending;
+  const errorMsg = localMutation.error?.message ?? cloudMutation.error?.message
+    ?? customLocalMutation.error?.message ?? customCloudMutation.error?.message ?? null;
+
+  const handleGenerate = () => {
+    if (useCustomPrompt) {
+      if (!customPrompt.trim()) return;
+      if (provider === 'local') {
+        customLocalMutation.mutate(customPrompt.trim());
+      } else {
+        customCloudMutation.mutate(customPrompt.trim());
+      }
+    } else {
+      if (provider === 'local') {
+        localMutation.mutate(selectedTemplateId);
+      } else {
+        cloudMutation.mutate(selectedTemplateId);
+      }
+    }
+  };
+
+  if (loadingSummaries) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-indigo-400" />
@@ -185,63 +351,240 @@ function SummaryTab({ meetingId }: { meetingId: string }) {
     );
   }
 
-  if (summary) {
-    return (
-      <div className="rounded-xl border border-dd-border bg-dd-surface p-5">
-        <pre className="whitespace-pre-wrap font-sans text-sm text-slate-300 leading-relaxed">
-          {summary.text}
-        </pre>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col items-center justify-center py-16">
-      <svg className="h-12 w-12 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-      </svg>
-      <p className="mt-4 text-slate-400">Resumo não disponível.</p>
+    <div className="space-y-4">
+      {/* ── Generate new summary section ── */}
+      <div ref={generateRef} className="rounded-xl border border-dd-border bg-dd-surface p-4 space-y-3">
+        <p className="text-xs font-medium text-slate-300">Gerar novo resumo</p>
 
-      {/* Template picker */}
-      {templates.length > 0 && (
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {templates.map((t) => (
+        {/* Provider toggle */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-slate-400">Processamento:</span>
+          <div className="flex rounded-lg border border-dd-border overflow-hidden">
             <button
-              key={t.id}
-              onClick={() => setSelectedTemplateId(t.id === selectedTemplateId ? undefined : t.id)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                t.id === selectedTemplateId
-                  ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                  : 'border-dd-border bg-dd-elevated text-slate-400 hover:text-slate-200'
+              onClick={() => setProvider('local')}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                provider === 'local'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-dd-elevated text-slate-400 hover:text-slate-200'
               }`}
             >
-              {t.name}
-              {t.isDefault && ' ★'}
+              Local (Ollama)
+            </button>
+            <button
+              onClick={() => setProvider('cloud')}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-dd-border ${
+                provider === 'cloud'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-dd-elevated text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Backend (Cloud)
+            </button>
+          </div>
+        </div>
+
+        {/* Ollama warning */}
+        {provider === 'local' && !ollamaAvailable && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+            <p className="text-sm text-amber-200/90">Ollama nao esta rodando.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Inicie com: <code className="rounded bg-dd-base px-1.5 py-0.5 text-amber-300 font-mono">ollama serve</code>
+            </p>
+          </div>
+        )}
+
+        {/* No transcript warning */}
+        {!hasTranscript && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+            <p className="text-sm text-amber-200/90">Transcreva a reuniao primeiro para gerar um resumo.</p>
+          </div>
+        )}
+
+        {/* Mode toggle: Template vs Custom */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-slate-400">Modo:</span>
+          <div className="flex rounded-lg border border-dd-border overflow-hidden">
+            <button
+              onClick={() => setUseCustomPrompt(false)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                !useCustomPrompt
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-dd-elevated text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Template
+            </button>
+            <button
+              onClick={() => setUseCustomPrompt(true)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-dd-border ${
+                useCustomPrompt
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-dd-elevated text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Prompt livre
+            </button>
+          </div>
+        </div>
+
+        {useCustomPrompt ? (
+          /* Custom prompt textarea */
+          <textarea
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+            placeholder="Escreva seu prompt aqui... A transcrição será injetada automaticamente."
+            rows={4}
+            className="w-full rounded-lg border border-dd-border bg-dd-elevated p-3 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"
+          />
+        ) : (
+          /* Template picker + model display */
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs font-medium text-slate-400">Template:</span>
+            <select
+              value={selectedTemplateId ?? ''}
+              onChange={(e) => setSelectedTemplateId(e.target.value || undefined)}
+              className="rounded-lg border border-dd-border bg-dd-elevated px-3 py-1.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+            >
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.name}{t.isDefault ? ' (padrao)' : ''}
+                </option>
+              ))}
+            </select>
+
+            <span className="text-xs text-slate-500">
+              Modelo: {provider === 'local'
+                ? (settings?.aiConfig?.summarization?.model ?? 'qwen3:14b')
+                : (templates.find(t => t.id === selectedTemplateId)?.model ?? 'gpt-4o')}
+            </span>
+          </div>
+        )}
+
+        {/* Generate button */}
+        <button
+          onClick={handleGenerate}
+          disabled={isPending || !hasTranscript || (provider === 'local' && !ollamaAvailable) || (useCustomPrompt && !customPrompt.trim())}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isPending ? (
+            <span className="flex items-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              Gerando resumo...
+            </span>
+          ) : (
+            'Gerar Resumo'
+          )}
+        </button>
+
+        {/* Error */}
+        {errorMsg && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">
+            {errorMsg}
+          </div>
+        )}
+      </div>
+
+      {/* Summary pill tabs */}
+      {sortedSummaries.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {sortedSummaries.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => selectSummary(s.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors border ${
+                selectedSummaryId === s.id
+                  ? 'border-indigo-500 bg-indigo-500/15 text-indigo-400'
+                  : 'border-dd-border bg-dd-elevated text-slate-400 hover:text-slate-200 hover:border-slate-500'
+              }`}
+            >
+              {s.style}
+              <span className="ml-1.5 text-slate-500">
+                {new Date(s.createdAt).toLocaleDateString('pt-BR', {
+                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
             </button>
           ))}
         </div>
       )}
 
-      <button
-        onClick={() => generateMutation.mutate(selectedTemplateId)}
-        disabled={generateMutation.isPending}
-        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-      >
-        {generateMutation.isPending ? (
-          <span className="flex items-center gap-2">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            Gerando...
-          </span>
-        ) : (
-          'Gerar Resumo'
-        )}
-      </button>
+      {/* Selected summary display */}
+      {selectedSummary && (
+        <div className="rounded-xl border border-dd-border bg-dd-surface p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className={`rounded-full px-2 py-0.5 font-medium ${
+                selectedSummary.provider === 'ollama'
+                  ? 'bg-emerald-900/40 text-emerald-400'
+                  : 'bg-blue-900/40 text-blue-400'
+              }`}>
+                {selectedSummary.provider === 'ollama' ? 'Local' : 'Cloud'}
+              </span>
+              <span>{selectedSummary.model}</span>
+              <span>·</span>
+              <span>{selectedSummary.style}</span>
+            </div>
 
-      {generateMutation.isError && (
-        <p className="mt-2 text-xs text-red-400">
-          Erro ao gerar resumo. Verifique se a gravação tem transcrição.
-        </p>
+            <div className="flex items-center gap-2">
+              {/* View mode toggle */}
+              <div className="flex rounded-md border border-dd-border overflow-hidden">
+                <button
+                  onClick={() => setViewMode('rendered')}
+                  className={`px-2 py-1 text-[10px] font-medium transition-colors ${
+                    viewMode === 'rendered'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-dd-elevated text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Formatado
+                </button>
+                <button
+                  onClick={() => setViewMode('raw')}
+                  className={`px-2 py-1 text-[10px] font-medium transition-colors border-l border-dd-border ${
+                    viewMode === 'raw'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-dd-elevated text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Markdown
+                </button>
+              </div>
+
+              {/* Copy button */}
+              <button
+                onClick={() => handleCopy(selectedSummary.bodyMarkdown)}
+                className="flex items-center gap-1 rounded-md border border-dd-border bg-dd-elevated px-2 py-1 text-[10px] font-medium text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <svg className="h-3 w-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-emerald-400">Copiado!</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copiar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {viewMode === 'rendered' ? (
+            <div className="prose prose-invert prose-sm max-w-none text-slate-300 prose-headings:text-slate-100 prose-strong:text-slate-200 prose-li:text-slate-300 prose-a:text-indigo-400">
+              <ReactMarkdown>{selectedSummary.bodyMarkdown}</ReactMarkdown>
+            </div>
+          ) : (
+            <pre className="whitespace-pre-wrap font-mono text-xs text-slate-300 leading-relaxed bg-dd-base rounded-lg p-4 border border-dd-border overflow-auto">
+              {selectedSummary.bodyMarkdown}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
@@ -479,7 +822,7 @@ function ResetStatusButton({ meetingId }: { meetingId: string }) {
 
 // ─── MeetingDetailScreen ──────────────────────────────────────
 
-type Tab = 'transcript' | 'notes' | 'summary';
+type Tab = 'transcript' | 'notes' | 'summary' | 'action-items';
 
 export function MeetingDetailScreen() {
   const { id } = useParams<{ id: string }>();
@@ -508,6 +851,7 @@ export function MeetingDetailScreen() {
         ...remote,
         recordingUri: local.recordingUri ?? remote.recordingUri,
         transcriptText: remote.transcriptText || local.transcriptText || null,
+        summarySnippet: local.summarySnippet ?? remote.summarySnippet ?? null,
         language: remote.language || local.language || null,
         status: remote.transcriptText ? remote.status : (local.transcriptText ? local.status : remote.status),
       };
@@ -518,6 +862,40 @@ export function MeetingDetailScreen() {
       const m = query.state.data;
       return m?.status === 'PROCESSING' ? 5000 : false;
     },
+  });
+
+  const { data: detailSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => window.electronAPI.settings.get(),
+  });
+
+  const [generatingSnippet, setGeneratingSnippet] = useState(false);
+  const [snippetError, setSnippetError] = useState<string | null>(null);
+  const handleGenerateSnippet = async () => {
+    if (!id || generatingSnippet || !meeting?.transcriptText) return;
+    setGeneratingSnippet(true);
+    setSnippetError(null);
+    try {
+      const transcript = meeting.transcriptText;
+      const generate = (detailSettings as any)?.preferLocal
+        ? window.electronAPI.ollama.generateSnippet(id, transcript)
+        : window.electronAPI.api.generateSnippet(id, transcript);
+      await generate;
+      queryClient.invalidateQueries({ queryKey: ['meeting', id] });
+      queryClient.invalidateQueries({ queryKey: ['meetings'] });
+    } catch (err: any) {
+      const msg = err?.message ?? 'Erro desconhecido';
+      console.error('[MeetingDetail] snippet generation failed:', msg);
+      setSnippetError(msg);
+    } finally {
+      setGeneratingSnippet(false);
+    }
+  };
+
+  const { data: seriesId } = useQuery({
+    queryKey: ['series-for-meeting', id],
+    queryFn: () => window.electronAPI.db.getSeriesIdForMeeting(id!),
+    enabled: !!id,
   });
 
   const upsertMutation = useMutation({
@@ -569,11 +947,12 @@ export function MeetingDetailScreen() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'transcript', label: 'Transcrição' },
     { key: 'notes',      label: 'Notas' },
-    { key: 'summary',    label: 'Resumo' },
+    { key: 'summary',       label: 'Resumo' },
+    { key: 'action-items',  label: 'Ações' },
   ];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="min-h-full">
       {/* Header */}
       <div className="border-b border-dd-border bg-dd-base px-6 py-4">
         {/* Back link */}
@@ -630,6 +1009,55 @@ export function MeetingDetailScreen() {
                 <span> · {meeting.minutes} min</span>
               )}
             </p>
+
+            {/* Summary snippet with regenerate */}
+            <div className="mt-1.5 flex items-center gap-2">
+              {meeting.summarySnippet ? (
+                <p className="text-xs text-slate-400 italic line-clamp-1">{meeting.summarySnippet}</p>
+              ) : meeting.transcriptText ? (
+                <p className="text-xs text-slate-500 italic">Sem resumo curto</p>
+              ) : null}
+              {meeting.transcriptText && (
+                <button
+                  onClick={handleGenerateSnippet}
+                  disabled={generatingSnippet}
+                  title={meeting.summarySnippet ? 'Regenerar resumo curto' : 'Gerar resumo curto'}
+                  className="flex-shrink-0 rounded p-0.5 text-slate-500 hover:text-indigo-400 transition-colors disabled:opacity-50"
+                >
+                  {generatingSnippet ? (
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border border-slate-600 border-t-indigo-400" />
+                  ) : (
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  )}
+                </button>
+              )}
+              {snippetError && (
+                <p className="text-[10px] text-red-400">{snippetError}</p>
+              )}
+            </div>
+
+            {/* Metadata row: folder, type, tags */}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500">Pasta:</span>
+                <FolderPicker meetingId={meeting.id} currentFolderId={meeting.folderId} />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500">Tipo:</span>
+                <MeetingTypePicker meetingId={meeting.id} currentTypeId={meeting.meetingTypeId} />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500">Tags:</span>
+                <TagEditor meetingId={meeting.id} tags={meeting.tags ?? {}} />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500">Série:</span>
+                <SeriesPicker meetingId={meeting.id} currentSeriesId={seriesId ?? null} />
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-shrink-0 items-center gap-3">
@@ -675,6 +1103,11 @@ export function MeetingDetailScreen() {
           <AudioPlayerControlled ref={audioRef} meetingId={meeting.id} recordingUri={meeting.recordingUri} />
         </div>
 
+        {/* Meeting Q&A */}
+        <div className="mt-3">
+          <MeetingChatPanel meetingId={meeting.id} hasTranscript={!!meeting.transcriptText} />
+        </div>
+
         {/* Tab bar */}
         <div className="mt-4 flex gap-1 border-b border-dd-border -mb-px">
           {tabs.map((tab) => (
@@ -694,10 +1127,11 @@ export function MeetingDetailScreen() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto px-6 py-6">
+      <div className="px-6 py-6">
         {activeTab === 'transcript' && <TranscriptViewer meeting={meeting} audioRef={audioRef} onRetranscribe={() => setTranscribeOpen(true)} />}
         {activeTab === 'notes'      && <NotesTab meetingId={meeting.id} />}
-        {activeTab === 'summary'    && <SummaryTab meetingId={meeting.id} />}
+        {activeTab === 'summary'      && <SummaryTab meetingId={meeting.id} hasTranscript={!!meeting.transcriptText} />}
+        {activeTab === 'action-items' && <ActionItemsTab meetingId={meeting.id} hasTranscript={!!meeting.transcriptText} />}
       </div>
     </div>
   );

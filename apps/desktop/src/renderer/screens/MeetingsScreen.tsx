@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Meeting, MeetingStatus } from '../../shared/types';
@@ -93,6 +93,18 @@ function MeetingCard({ meeting, onClick }: { meeting: Meeting; onClick: () => vo
               </span>
             )}
           </div>
+          {Object.keys(meeting.tags ?? {}).length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {Object.values(meeting.tags).map((tag) => (
+                <span key={tag} className="rounded-full border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-400">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {meeting.summarySnippet && (
+            <p className="mt-1.5 text-xs text-slate-400 line-clamp-1">{meeting.summarySnippet}</p>
+          )}
         </div>
         <div className="flex-shrink-0 pt-0.5">
           {statusBadge(meeting.status)}
@@ -129,6 +141,7 @@ export function MeetingsScreen() {
             ...r,
             recordingUri: m.recordingUri ?? r.recordingUri,
             transcriptText: r.transcriptText || m.transcriptText || null,
+            summarySnippet: m.summarySnippet ?? r.summarySnippet ?? null,
             status: r.transcriptText ? r.status : (m.transcriptText ? m.status : r.status),
           });
         } else {
@@ -138,6 +151,32 @@ export function MeetingsScreen() {
       return Array.from(merged.values());
     },
   });
+
+  // Settings (for preferLocal)
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => window.electronAPI.settings.get(),
+  });
+
+  // Background snippet generation for meetings with transcript but no snippet
+  const snippetGenerating = useRef(new Set<string>());
+  useEffect(() => {
+    if (!meetings.length || !settings) return;
+    const needSnippet = meetings.filter(
+      (m) => m.transcriptText && !m.summarySnippet && !snippetGenerating.current.has(m.id)
+    ).slice(0, 3); // max 3 at a time
+
+    for (const m of needSnippet) {
+      snippetGenerating.current.add(m.id);
+      const generate = (settings as any).preferLocal
+        ? window.electronAPI.ollama.generateSnippet(m.id, m.transcriptText!)
+        : window.electronAPI.api.generateSnippet(m.id, m.transcriptText!);
+      generate
+        .then(() => queryClient.invalidateQueries({ queryKey: ['meetings'] }))
+        .catch(() => {}) // silent fail
+        .finally(() => snippetGenerating.current.delete(m.id));
+    }
+  }, [meetings, settings, queryClient]);
 
   const filtered = meetings.filter((m) => {
     if (!search.trim()) return true;

@@ -32,7 +32,7 @@ export function SegmentBlock({ segments, speaker, isActive, onSeek }: SegmentBlo
   return (
     <div
       className={`rounded-r-lg border-l-[3px] ${borderClass} pl-3 pr-2 py-2 cursor-pointer transition-colors hover:bg-dd-elevated/50 ${
-        isActive ? 'ring-1 ring-indigo-500/30 bg-indigo-500/5' : ''
+        isActive ? 'ring-2 ring-indigo-500/50 bg-indigo-500/10' : ''
       }`}
       onClick={() => onSeek(firstSegment.startSec)}
     >
@@ -78,7 +78,7 @@ export function TimestampBlock({
   return (
     <div
       className={`pl-3 pr-2 py-2 cursor-pointer transition-colors hover:bg-dd-elevated/50 rounded-lg ${
-        isActive ? 'ring-1 ring-indigo-500/30 bg-indigo-500/5' : ''
+        isActive ? 'ring-2 ring-indigo-500/50 bg-indigo-500/10' : ''
       }`}
       onClick={() => onSeek(firstSegment.startSec)}
     >

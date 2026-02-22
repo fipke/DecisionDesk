@@ -5,7 +5,7 @@ import { DashboardScreen } from './screens/DashboardScreen';
 import { QueueScreen } from './screens/QueueScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { MeetingsScreen } from './screens/MeetingsScreen';
-import { MeetingDetailScreen } from './screens/MeetingDetailScreen';
+import { MeetingDetailScreen, ScreenErrorBoundary } from './screens/MeetingDetailScreen';
 import { RecordScreen } from './screens/RecordScreen';
 import { PeopleScreen } from './screens/PeopleScreen';
 import { TemplatesScreen } from './screens/TemplatesScreen';
@@ -208,7 +208,7 @@ export function App() {
             <Routes>
               <Route path="/" element={<DashboardScreen />} />
               <Route path="/meetings" element={<MeetingsScreen />} />
-              <Route path="/meetings/:id" element={<MeetingDetailScreen />} />
+              <Route path="/meetings/:id" element={<ScreenErrorBoundary><MeetingDetailScreen /></ScreenErrorBoundary>} />
               <Route path="/record" element={<RecordScreen />} />
               <Route path="/queue" element={<QueueScreen />} />
               <Route path="/people" element={<PeopleScreen />} />

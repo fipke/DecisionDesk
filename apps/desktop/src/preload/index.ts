@@ -4,7 +4,9 @@ import type {
   Meeting, Folder, MeetingType, Person, MeetingPerson,
   NoteBlock, Summary, MeetingSeries, MeetingSeriesEntry,
   Template, Settings, PendingJob, AcceptedJob,
-  TranscriptSegment, MeetingSpeaker
+  TranscriptSegment, MeetingSpeaker, ChatResponse,
+  ParticipantSuggestion, PersonMeetingRow,
+  ActionItem
 } from '../shared/types';
 
 // ─── ElectronAPI type definition ─────────────────────────────
@@ -43,6 +45,7 @@ export interface ElectronAPI {
     fetchMeeting: (id: string) => Promise<any>;
     fetchTemplates: () => Promise<{ id: string; name: string; isDefault: boolean; description?: string; systemPrompt?: string; userPromptTemplate?: string; model?: string; maxTokens?: number; temperature?: number; outputFormat?: string }[]>;
     generateSummary: (meetingId: string, templateId?: string) => Promise<{ id: string; text: string; model?: string; tokensUsed?: number }>;
+    generateSummaryCustom: (meetingId: string, customPrompt: string) => Promise<{ id: string; text: string; model?: string; tokensUsed?: number }>;
     fetchSummary: (meetingId: string) => Promise<{ id: string; text: string } | null>;
     transcribeMeeting: (meetingId: string, options?: { provider?: string; model?: string; enableDiarization?: boolean }) => Promise<{ meetingId: string; status: string }>;
     resetMeetingStatus: (meetingId: string) => Promise<any>;
@@ -57,6 +60,9 @@ export interface ElectronAPI {
     deletePerson: (id: string) => Promise<void>;
     fetchStats: () => Promise<{ totalMeetings: number; totalMinutesRecorded: number; pendingProcessing: number; thisWeekCount: number }>;
     fetchCalendar: (from: string, to: string) => Promise<{ day: string; count: number }[]>;
+    generateSnippet: (meetingId: string, transcript?: string) => Promise<string>;
+    extractParticipants: (meetingId: string) => Promise<ParticipantSuggestion[]>;
+    extractActionItems: (meetingId: string) => Promise<ActionItem[]>;
   };
   recording: {
     save: (arrayBuffer: ArrayBuffer) => Promise<string>;
@@ -126,11 +132,27 @@ export interface ElectronAPI {
     upsertMeetingSeries: (ms: Partial<MeetingSeries> & { name: string }) => Promise<MeetingSeries>;
     listSeriesEntries: (seriesId: string) => Promise<MeetingSeriesEntry[]>;
     addSeriesEntry: (entry: MeetingSeriesEntry) => Promise<void>;
+    removeSeriesEntry: (meetingId: string, seriesId: string) => Promise<void>;
+    getNextSeriesOrdinal: (seriesId: string) => Promise<number>;
 
     // Templates
     listTemplates: () => Promise<Template[]>;
     upsertTemplate: (t: Partial<Template> & { name: string; bodyMarkdown: string }) => Promise<Template>;
     deleteTemplate: (id: string) => Promise<void>;
+
+    // People → meetings
+    listMeetingsForPerson: (personId: string) => Promise<PersonMeetingRow[]>;
+
+    // Tags
+    listAllTags: () => Promise<string[]>;
+
+    // Action Items
+    listActionItems: (meetingId: string) => Promise<ActionItem[]>;
+    listOpenActionItemsForSeries: (seriesId: string) => Promise<ActionItem[]>;
+    upsertActionItem: (item: Partial<ActionItem> & { meetingId: string; content: string }) => Promise<ActionItem>;
+    toggleActionItem: (id: string, resolvedInMeetingId: string) => Promise<ActionItem>;
+    deleteActionItem: (id: string) => Promise<void>;
+    getSeriesIdForMeeting: (meetingId: string) => Promise<string | null>;
 
     // Sync
     syncQueueCount: () => Promise<number>;
@@ -143,6 +165,37 @@ export interface ElectronAPI {
     getStatus: () => Promise<{ online: boolean; backendReachable: boolean }>;
     onStatusChange: (callback: (status: { online: boolean; backendReachable: boolean }) => void) => void;
   };
+
+  // ─── Ollama (local AI) ─────────────────────────────────
+
+  ollama: {
+    check: () => Promise<boolean>;
+    models: () => Promise<string[]>;
+    generateSummary: (meetingId: string, templateId?: string) =>
+      Promise<{ id: string; text: string; model?: string; tokensUsed?: number }>;
+    generateSummaryCustom: (meetingId: string, customPrompt: string) =>
+      Promise<{ id: string; text: string; model?: string; tokensUsed?: number }>;
+    generateSnippet: (meetingId: string, transcript?: string) => Promise<string>;
+    extractParticipants: (meetingId: string) => Promise<ParticipantSuggestion[]>;
+    extractActionItems: (meetingId: string) => Promise<ActionItem[]>;
+  };
+
+  // ─── Chat (meeting Q&A) ─────────────────────────────
+
+  chat: {
+    sendLocal: (meetingId: string, message: string) => Promise<ChatResponse>;
+    sendCloud: (meetingId: string, message: string) => Promise<ChatResponse>;
+  };
+
+  // ─── Sync: Pull ───────────────────────────────────────
+
+  sync: {
+    pullTemplates: () => Promise<number>;
+    pullSummary: (meetingId: string) => Promise<number>;
+  };
+
+  // ─── Events ──────────────────────────────────────────
+  onActionItemsExtracted: (callback: (meetingId: string) => void) => void;
 
   // ─── Navigation (from main process) ────────────────────
   onNavigate: (callback: (path: string) => void) => void;
@@ -174,6 +227,7 @@ const electronAPI: ElectronAPI = {
     fetchMeeting: (id) => ipcRenderer.invoke('api:meetings:get', id),
     fetchTemplates: () => ipcRenderer.invoke('api:templates:list'),
     generateSummary: (meetingId, templateId) => ipcRenderer.invoke('api:summary:generate', meetingId, templateId),
+    generateSummaryCustom: (meetingId, customPrompt) => ipcRenderer.invoke('api:summary:generate-custom', meetingId, customPrompt),
     fetchSummary: (meetingId) => ipcRenderer.invoke('api:summary:get', meetingId),
     transcribeMeeting: (meetingId, options) => ipcRenderer.invoke('api:meetings:transcribe', meetingId, options),
     resetMeetingStatus: (meetingId) => ipcRenderer.invoke('api:meetings:reset-status', meetingId),
@@ -188,6 +242,9 @@ const electronAPI: ElectronAPI = {
     deletePerson: (id) => ipcRenderer.invoke('api:people:delete', id),
     fetchStats: () => ipcRenderer.invoke('api:stats:get'),
     fetchCalendar: (from, to) => ipcRenderer.invoke('api:stats:calendar', from, to),
+    generateSnippet: (meetingId, transcript) => ipcRenderer.invoke('api:generate-snippet', meetingId, transcript),
+    extractParticipants: (meetingId) => ipcRenderer.invoke('api:extract-participants', meetingId),
+    extractActionItems: (meetingId) => ipcRenderer.invoke('api:extract-action-items', meetingId),
   },
   recording: {
     save: (arrayBuffer) => ipcRenderer.invoke('recording:save', arrayBuffer),
@@ -260,11 +317,27 @@ const electronAPI: ElectronAPI = {
     upsertMeetingSeries: (ms) => ipcRenderer.invoke('db:series:upsert', ms),
     listSeriesEntries: (seriesId) => ipcRenderer.invoke('db:series-entries:list', seriesId),
     addSeriesEntry: (entry) => ipcRenderer.invoke('db:series-entries:add', entry),
+    removeSeriesEntry: (meetingId, seriesId) => ipcRenderer.invoke('db:series-entries:remove', meetingId, seriesId),
+    getNextSeriesOrdinal: (seriesId) => ipcRenderer.invoke('db:series:next-ordinal', seriesId),
 
     // Templates
     listTemplates: () => ipcRenderer.invoke('db:templates:list'),
     upsertTemplate: (t) => ipcRenderer.invoke('db:templates:upsert', t),
     deleteTemplate: (id) => ipcRenderer.invoke('db:templates:delete', id),
+
+    // People → meetings
+    listMeetingsForPerson: (personId) => ipcRenderer.invoke('db:people:meetings', personId),
+
+    // Tags
+    listAllTags: () => ipcRenderer.invoke('db:tags:list-all'),
+
+    // Action Items
+    listActionItems: (meetingId) => ipcRenderer.invoke('db:action-items:list', meetingId),
+    listOpenActionItemsForSeries: (seriesId) => ipcRenderer.invoke('db:action-items:list-open-series', seriesId),
+    upsertActionItem: (item) => ipcRenderer.invoke('db:action-items:upsert', item),
+    toggleActionItem: (id, resolvedInMeetingId) => ipcRenderer.invoke('db:action-items:toggle', id, resolvedInMeetingId),
+    deleteActionItem: (id) => ipcRenderer.invoke('db:action-items:delete', id),
+    getSeriesIdForMeeting: (meetingId) => ipcRenderer.invoke('db:action-items:get-series', meetingId),
 
     // Sync
     syncQueueCount: () => ipcRenderer.invoke('db:sync:count'),
@@ -278,6 +351,30 @@ const electronAPI: ElectronAPI = {
     onStatusChange: (cb) =>
       ipcRenderer.on('connectivity:status-changed', (_, status) => cb(status))
   },
+
+  ollama: {
+    check: () => ipcRenderer.invoke('ollama:check'),
+    models: () => ipcRenderer.invoke('ollama:models'),
+    generateSummary: (meetingId, templateId) =>
+      ipcRenderer.invoke('ollama:generate-summary', meetingId, templateId),
+    generateSummaryCustom: (meetingId, customPrompt) =>
+      ipcRenderer.invoke('ollama:generate-summary-custom', meetingId, customPrompt),
+    generateSnippet: (meetingId, transcript) => ipcRenderer.invoke('ollama:generate-snippet', meetingId, transcript),
+    extractParticipants: (meetingId) => ipcRenderer.invoke('ollama:extract-participants', meetingId),
+    extractActionItems: (meetingId) => ipcRenderer.invoke('ollama:extract-action-items', meetingId),
+  },
+
+  chat: {
+    sendLocal: (meetingId, message) => ipcRenderer.invoke('ollama:chat', meetingId, message),
+    sendCloud: (meetingId, message) => ipcRenderer.invoke('api:chat', meetingId, message),
+  },
+
+  sync: {
+    pullTemplates: () => ipcRenderer.invoke('sync:pull-templates'),
+    pullSummary: (meetingId) => ipcRenderer.invoke('sync:pull-summary', meetingId),
+  },
+
+  onActionItemsExtracted: (cb) => ipcRenderer.on('action-items:extracted', (_, meetingId) => cb(meetingId)),
 
   onNavigate: (cb) => ipcRenderer.on('navigate', (_, path) => cb(path))
 };

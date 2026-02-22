@@ -82,7 +82,7 @@ public class AiExtractionService {
 
         AiCompletionProvider provider = aiProviderRouter.getProvider(
                 providerName != null ? providerName : "ollama");
-        String effectiveModel = model != null ? model : "qwen3:8b";
+        String effectiveModel = model != null ? model : "qwen3:14b";
 
         log.info("Extracting from meeting={} via provider={} model={}",
                 meetingId, provider.name(), effectiveModel);

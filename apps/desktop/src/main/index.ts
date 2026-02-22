@@ -1,12 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, Notification } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Notification, protocol } from 'electron';
 import { join } from 'path';
-import { writeFileSync, mkdirSync, existsSync, createReadStream } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, createReadStream, statSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import Store from 'electron-store';
 import { WhisperService } from './whisper';
 import { QueueService } from './queue';
 import { ApiService } from './api';
+import { OllamaService } from './ollamaService';
 import { initDatabase, closeDatabase } from './database';
 import { ConnectivityService } from './connectivity';
 import { SyncService } from './syncService';
@@ -19,14 +20,41 @@ const store = new Store({
     whisperModel: 'large-v3',
     enableDiarization: true,
     autoAcceptJobs: false,
-    notificationsEnabled: true
+    notificationsEnabled: true,
+    preferLocal: true,
+    aiConfig: {
+      summarization: { provider: 'ollama', model: 'qwen3:14b' },
+      extraction: { provider: 'ollama', model: 'qwen3:14b' },
+      chat: { provider: 'ollama', model: 'qwen3:14b' },
+    }
   }
 });
+
+function buildActionItemsPrompt(transcript: string, participantNames: string[]): string {
+  const ctx = participantNames.length > 0
+    ? `\nParticipantes conhecidos: ${participantNames.join(', ')}\n`
+    : '';
+  return `Extraia todos os itens de ação (tarefas, compromissos, pendências) desta transcrição.
+${ctx}
+Retorne APENAS um array JSON no formato:
+[{"content": "Descrição clara da tarefa", "assignee": "Nome do responsável ou null", "dueDate": "YYYY-MM-DD ou null"}]
+
+Regras:
+- Inclua APENAS tarefas concretas e acionáveis
+- Se alguém disse "vou fazer X", isso é um action item atribuído a essa pessoa
+- Se alguém disse "precisamos fazer X" sem responsável, assignee = null
+- Datas relativas como "semana que vem" devem ser convertidas para data ISO
+- NÃO inclua decisões, observações ou tópicos de discussão — apenas tarefas
+
+TRANSCRIÇÃO:
+${transcript.substring(0, 6000)}`;
+}
 
 let mainWindow: BrowserWindow | null = null;
 let whisperService: WhisperService;
 let queueService: QueueService;
 let apiService: ApiService;
+let ollamaService: OllamaService;
 let connectivityService: ConnectivityService;
 let syncService: SyncService;
 
@@ -84,7 +112,10 @@ function initializeServices(): void {
   // 3. API client
   apiService = new ApiService(apiUrl);
 
-  // 4. Connectivity monitor
+  // 4. Ollama (local AI)
+  ollamaService = new OllamaService();
+
+  // 5. Connectivity monitor
   connectivityService = new ConnectivityService(apiUrl);
   connectivityService.start(15_000);
 
@@ -93,8 +124,13 @@ function initializeServices(): void {
     mainWindow?.webContents.send('connectivity:status-changed', status);
   });
 
-  // 5. Sync service (outbox drain)
+  // 6. Sync service (outbox drain + pull)
   syncService = new SyncService(connectivityService, apiService);
+
+  // Pull templates from backend on startup and when backend becomes reachable
+  connectivityService.on('backend-reachable', () => {
+    syncService.pullTemplates().catch(() => {});
+  });
 
   // 6. Transcription queue (desktop ↔ backend)
   queueService = new QueueService(apiService, whisperService, {
@@ -382,7 +418,9 @@ function setupIPC(): void {
   ipcMain.handle('db:series:list', () => repo.listMeetingSeries());
   ipcMain.handle('db:series:upsert', (_, ms) => repo.upsertMeetingSeries(ms));
   ipcMain.handle('db:series-entries:list', (_, seriesId: string) => repo.listSeriesEntries(seriesId));
-  ipcMain.handle('db:series-entries:add', (_, entry) => repo.addSeriesEntry(entry));
+  ipcMain.handle('db:series-entries:add', (_, entry) => repo.addSeriesEntryWithSync(entry));
+  ipcMain.handle('db:series-entries:remove', (_, meetingId: string, seriesId: string) => repo.removeSeriesEntry(meetingId, seriesId));
+  ipcMain.handle('db:series:next-ordinal', (_, seriesId: string) => repo.getNextOrdinalForSeries(seriesId));
 
   // ── Database: Templates ──
   ipcMain.handle('db:templates:list', () => repo.listTemplates());
@@ -406,14 +444,390 @@ function setupIPC(): void {
 
   // ── API: Templates + Summaries ──
   ipcMain.handle('api:templates:list', () => apiService.fetchTemplates());
-  ipcMain.handle('api:summary:generate', (_, meetingId: string, templateId?: string) =>
-    apiService.generateSummary(meetingId, templateId));
+  ipcMain.handle('api:summary:generate', async (_, meetingId: string, templateId?: string) => {
+    // Ensure transcript is on the backend before generating summary
+    const meeting = repo.getMeeting(meetingId);
+    if (meeting?.transcriptText) {
+      await apiService.pushTranscript(meetingId, meeting.transcriptText, meeting.language ?? 'pt');
+    }
+    const result = await apiService.generateSummary(meetingId, templateId);
+    // Save cloud-generated summary to local SQLite for offline access
+    if (result?.id) {
+      repo.upsertSummary({
+        id: result.id,
+        meetingId,
+        provider: 'cloud',
+        model: result.model ?? 'unknown',
+        style: 'cloud',
+        bodyMarkdown: result.textMd ?? result.text ?? '',
+      }, false);
+    }
+    // Auto-extract action items after cloud summary
+    if (repo.listActionItems(meetingId).length === 0 && meeting?.transcriptText) {
+      const aiConfig = store.get('aiConfig') as any;
+      const extractModel = aiConfig?.extraction?.model ?? 'qwen3:14b';
+      const people = repo.listPeople();
+      const meetingPeople = repo.listMeetingPeople(meetingId);
+      const names = meetingPeople
+        .map(mp => people.find(p => p.id === mp.personId))
+        .filter(Boolean)
+        .map(p => p!.displayName);
+      ollamaService.generateSummary({
+        model: extractModel,
+        systemPrompt: 'You are a meeting assistant that extracts action items from meeting transcripts. Extract ONLY concrete tasks, to-dos, and commitments. Return ONLY a JSON array, no other text. Always respond in the same language as the transcript.',
+        userPrompt: buildActionItemsPrompt(meeting.transcriptText, names),
+        maxTokens: 2000,
+        temperature: 0.2,
+        think: false,
+      }).then(r => {
+        let c = r.content.trim();
+        const m = c.match(/\[[\s\S]*\]/);
+        if (m) c = m[0];
+        const items = JSON.parse(c);
+        const sid = repo.getSeriesIdForMeeting(meetingId);
+        repo.insertActionItemsBatch(meetingId, sid, items, people);
+        mainWindow?.webContents.send('action-items:extracted', meetingId);
+      }).catch(err => {
+        console.warn('[ActionItems] Auto-extraction after cloud summary failed:', err?.message);
+      });
+    }
+
+    return result;
+  });
   ipcMain.handle('api:summary:get', (_, meetingId: string) => apiService.fetchSummary(meetingId));
+
+  // ── Ollama (local AI) ──
+  ipcMain.handle('ollama:check', () => ollamaService.isAvailable());
+  ipcMain.handle('ollama:models', () => ollamaService.listModels());
+  ipcMain.handle('ollama:generate-summary', async (_, meetingId: string, templateId?: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) {
+      throw new Error('No transcript available for this meeting');
+    }
+
+    // Find template
+    const templates = repo.listTemplates();
+    const template = templateId
+      ? templates.find(t => t.id === templateId)
+      : templates.find(t => t.isDefault) ?? templates[0];
+    if (!template?.userPromptTemplate) {
+      throw new Error('No template with prompt found. Pull templates from backend or create one.');
+    }
+
+    // Resolve model from aiConfig > template > default
+    const aiConfig = store.get('aiConfig') as any;
+    const model = aiConfig?.summarization?.model ?? template.model ?? 'qwen3:14b';
+
+    // Build prompt
+    const userPrompt = template.userPromptTemplate.replace('{{transcript}}', meeting.transcriptText);
+    const systemPrompt = template.systemPrompt ?? '';
+
+    const result = await ollamaService.generateSummary({
+      model,
+      systemPrompt,
+      userPrompt,
+      maxTokens: template.maxTokens ?? 2000,
+      temperature: template.temperature ?? 0.3,
+    });
+
+    // Save to local SQLite
+    const summary = repo.upsertSummary({
+      meetingId,
+      provider: 'ollama',
+      model: result.model,
+      style: template.name,
+      bodyMarkdown: result.content,
+    });
+
+    // Auto-extract action items if none exist yet
+    if (repo.listActionItems(meetingId).length === 0 && meeting.transcriptText) {
+      const extractModel = aiConfig?.extraction?.model ?? model;
+      const meetingPeople = repo.listMeetingPeople(meetingId);
+      const people = repo.listPeople();
+      const names = meetingPeople
+        .map(mp => people.find(p => p.id === mp.personId))
+        .filter(Boolean)
+        .map(p => p!.displayName);
+      ollamaService.generateSummary({
+        model: extractModel,
+        systemPrompt: 'You are a meeting assistant that extracts action items from meeting transcripts. Extract ONLY concrete tasks, to-dos, and commitments. Return ONLY a JSON array, no other text. Always respond in the same language as the transcript.',
+        userPrompt: buildActionItemsPrompt(meeting.transcriptText, names),
+        maxTokens: 2000,
+        temperature: 0.2,
+        think: false,
+      }).then(r => {
+        let c = r.content.trim();
+        const m = c.match(/\[[\s\S]*\]/);
+        if (m) c = m[0];
+        const items = JSON.parse(c);
+        const sid = repo.getSeriesIdForMeeting(meetingId);
+        repo.insertActionItemsBatch(meetingId, sid, items, people);
+        mainWindow?.webContents.send('action-items:extracted', meetingId);
+      }).catch(err => {
+        console.warn('[ActionItems] Auto-extraction failed:', err?.message);
+      });
+    }
+
+    return {
+      id: summary.id,
+      text: result.content,
+      model: result.model,
+      tokensUsed: result.promptTokens + result.completionTokens,
+    };
+  });
+
+  // ── Ollama: Custom prompt summary ──
+  ipcMain.handle('ollama:generate-summary-custom', async (_, meetingId: string, customPrompt: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) {
+      throw new Error('No transcript available for this meeting');
+    }
+
+    const aiConfig = store.get('aiConfig') as any;
+    const model = aiConfig?.summarization?.model ?? 'qwen3:14b';
+
+    const systemPrompt = 'You are a helpful meeting assistant. Always respond in the same language as the transcript.';
+    const userPrompt = `${customPrompt}\n\n---\nTRANSCRIÇÃO:\n${meeting.transcriptText}`;
+
+    const result = await ollamaService.generateSummary({
+      model,
+      systemPrompt,
+      userPrompt,
+      maxTokens: 2000,
+      temperature: 0.3,
+    });
+
+    const summary = repo.upsertSummary({
+      meetingId,
+      provider: 'ollama',
+      model: result.model,
+      style: 'custom',
+      bodyMarkdown: result.content,
+    });
+
+    return {
+      id: summary.id,
+      text: result.content,
+      model: result.model,
+      tokensUsed: result.promptTokens + result.completionTokens,
+    };
+  });
+
+  // ── API: Custom prompt summary ──
+  ipcMain.handle('api:summary:generate-custom', async (_, meetingId: string, customPrompt: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (meeting?.transcriptText) {
+      await apiService.pushTranscript(meetingId, meeting.transcriptText, meeting.language ?? 'pt');
+    }
+    const result = await apiService.generateSummaryCustom(meetingId, customPrompt);
+    if (result?.id) {
+      repo.upsertSummary({
+        id: result.id,
+        meetingId,
+        provider: 'cloud',
+        model: result.model ?? 'unknown',
+        style: 'custom',
+        bodyMarkdown: result.textMd ?? result.text ?? '',
+      }, false);
+    }
+    return result;
+  });
+
+  // ── Chat: Local (Ollama) ──
+  ipcMain.handle('ollama:chat', async (_, meetingId: string, message: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) {
+      throw new Error('No transcript available for this meeting');
+    }
+
+    const aiConfig = store.get('aiConfig') as any;
+    const model = aiConfig?.chat?.model ?? 'qwen3:14b';
+
+    const systemPrompt = `You are a helpful meeting assistant. You have access to the full transcript of a meeting.
+Answer the user's questions based on what was discussed in the meeting.
+Always respond in the same language as the transcript.
+Be concise and precise. If something was not discussed, say so.
+
+Meeting transcript:
+${meeting.transcriptText}`;
+
+    const result = await ollamaService.generateSummary({
+      model,
+      systemPrompt,
+      userPrompt: message,
+      maxTokens: 1024,
+      temperature: 0.5,
+    });
+
+    return {
+      answer: result.content,
+      provider: 'ollama',
+      model: result.model,
+      tokensUsed: result.promptTokens + result.completionTokens,
+    };
+  });
+
+  // ── Chat: Cloud (Backend) ──
+  ipcMain.handle('api:chat', async (_, meetingId: string, message: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (meeting?.transcriptText) {
+      await apiService.pushTranscript(meetingId, meeting.transcriptText, meeting.language ?? 'pt');
+    }
+
+    const aiConfig = store.get('aiConfig') as any;
+    const provider = aiConfig?.chat?.provider ?? 'ollama';
+    const model = aiConfig?.chat?.model ?? 'qwen3:14b';
+
+    return apiService.chatWithMeeting(meetingId, message, provider, model);
+  });
+
+  // ── Snippet generation (one-line summary for meeting cards) ──
+  ipcMain.handle('ollama:generate-snippet', async (_, meetingId: string, transcriptOverride?: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    const transcript = transcriptOverride || meeting?.transcriptText;
+    if (!transcript) throw new Error('No transcript');
+    const aiConfig = store.get('aiConfig') as any;
+    const model = aiConfig?.extraction?.model ?? 'qwen3:14b';
+    const result = await ollamaService.generateSummary({
+      model,
+      systemPrompt: 'You are a meeting assistant. Respond ONLY with a single sentence summary, max 100 characters. Same language as input.',
+      userPrompt: `Summarize this meeting in one sentence (max 100 chars):\n\n${transcript.substring(0, 3000)}`,
+      maxTokens: 200,
+      temperature: 0.2,
+      think: false,
+    });
+    const snippet = result.content.trim().substring(0, 120);
+    repo.updateSummarySnippet(meetingId, snippet);
+    return snippet;
+  });
+
+  ipcMain.handle('api:generate-snippet', async (_, meetingId: string, transcriptOverride?: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    const transcript = transcriptOverride || meeting?.transcriptText;
+    if (!transcript) throw new Error('No transcript');
+    await apiService.pushTranscript(meetingId, transcript, meeting?.language ?? 'pt');
+    const result = await apiService.chatWithMeeting(
+      meetingId,
+      'Summarize this meeting in one sentence, max 100 characters. Same language as the transcript.',
+    );
+    const snippet = result.answer.trim().substring(0, 120);
+    repo.updateSummarySnippet(meetingId, snippet);
+    return snippet;
+  });
+
+  // ── AI Participant Extraction ──
+  ipcMain.handle('ollama:extract-participants', async (_, meetingId: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) throw new Error('No transcript');
+    const aiConfig = store.get('aiConfig') as any;
+    const model = aiConfig?.extraction?.model ?? 'qwen3:14b';
+    const result = await ollamaService.generateSummary({
+      model,
+      systemPrompt: 'You are a meeting assistant. Extract all people mentioned or participating in this meeting. Return ONLY a JSON array, no other text.',
+      userPrompt: `From this transcript, identify all people. Return JSON array: [{"name": "...", "role": "participant" or "mentioned", "confidence": 0.0-1.0}]. Role is "participant" (spoke/attended) or "mentioned" (referenced but not present).\n\nTRANSCRIPT:\n${meeting.transcriptText.substring(0, 4000)}`,
+      maxTokens: 1000,
+      temperature: 0.2,
+      think: false,
+    });
+    let content = result.content.trim();
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) content = jsonMatch[0];
+    return JSON.parse(content);
+  });
+
+  ipcMain.handle('api:extract-participants', async (_, meetingId: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) throw new Error('No transcript');
+    await apiService.pushTranscript(meetingId, meeting.transcriptText, meeting.language ?? 'pt');
+    const result = await apiService.chatWithMeeting(
+      meetingId,
+      'Identify all people mentioned or participating in this meeting. Return ONLY a JSON array: [{"name": "...", "role": "participant" or "mentioned", "confidence": 0.0-1.0}]. No other text.',
+    );
+    let content = result.answer.trim();
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) content = jsonMatch[0];
+    return JSON.parse(content);
+  });
+
+  // ── People → Meetings + Tags ──
+  ipcMain.handle('db:people:meetings', (_, personId: string) => repo.listMeetingsForPerson(personId));
+  ipcMain.handle('db:tags:list-all', () => repo.listAllTags());
+
+  // ── Database: Action Items ──
+  ipcMain.handle('db:action-items:list', (_, meetingId: string) => repo.listActionItems(meetingId));
+  ipcMain.handle('db:action-items:list-open-series', (_, seriesId: string) => repo.listOpenActionItemsForSeries(seriesId));
+  ipcMain.handle('db:action-items:upsert', (_, item) => repo.upsertActionItem(item));
+  ipcMain.handle('db:action-items:toggle', (_, id: string, resolvedInMeetingId: string) => repo.toggleActionItemStatus(id, resolvedInMeetingId));
+  ipcMain.handle('db:action-items:delete', (_, id: string) => repo.deleteActionItem(id));
+  ipcMain.handle('db:action-items:get-series', (_, meetingId: string) => repo.getSeriesIdForMeeting(meetingId));
+
+  // ── AI: Extract action items ──
+  ipcMain.handle('ollama:extract-action-items', async (_, meetingId: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) throw new Error('No transcript');
+    const aiConfig = store.get('aiConfig') as any;
+    const model = aiConfig?.extraction?.model ?? 'qwen3:14b';
+    const people = repo.listPeople();
+    const meetingPeople = repo.listMeetingPeople(meetingId);
+    const participantNames = meetingPeople
+      .map(mp => people.find(p => p.id === mp.personId))
+      .filter(Boolean)
+      .map(p => p!.displayName);
+    const result = await ollamaService.generateSummary({
+      model,
+      systemPrompt: 'You are a meeting assistant that extracts action items from meeting transcripts. Extract ONLY concrete tasks, to-dos, and commitments. Return ONLY a JSON array, no other text. Always respond in the same language as the transcript.',
+      userPrompt: buildActionItemsPrompt(meeting.transcriptText, participantNames),
+      maxTokens: 2000,
+      temperature: 0.2,
+      think: false,
+    });
+    let content = result.content.trim();
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) content = jsonMatch[0];
+    const extracted = JSON.parse(content) as Array<{ content: string; assignee: string | null; dueDate: string | null }>;
+    const seriesId = repo.getSeriesIdForMeeting(meetingId);
+    return repo.insertActionItemsBatch(meetingId, seriesId, extracted, people);
+  });
+
+  ipcMain.handle('api:extract-action-items', async (_, meetingId: string) => {
+    const meeting = repo.getMeeting(meetingId);
+    if (!meeting?.transcriptText) throw new Error('No transcript');
+    const people = repo.listPeople();
+    const meetingPeople = repo.listMeetingPeople(meetingId);
+    const participantNames = meetingPeople
+      .map(mp => people.find(p => p.id === mp.personId))
+      .filter(Boolean)
+      .map(p => p!.displayName);
+    await apiService.pushTranscript(meetingId, meeting.transcriptText, meeting.language ?? 'pt');
+    const result = await apiService.chatWithMeeting(
+      meetingId,
+      buildActionItemsPrompt(meeting.transcriptText.substring(0, 500), participantNames),
+    );
+    let content = result.answer.trim();
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) content = jsonMatch[0];
+    const extracted = JSON.parse(content) as Array<{ content: string; assignee: string | null; dueDate: string | null }>;
+    const seriesId = repo.getSeriesIdForMeeting(meetingId);
+    return repo.insertActionItemsBatch(meetingId, seriesId, extracted, people);
+  });
+
+  // ── Sync: Pull ──
+  ipcMain.handle('sync:pull-templates', () => syncService.pullTemplates());
+  ipcMain.handle('sync:pull-summary', (_, meetingId: string) => syncService.pullSummary(meetingId));
 
   // ── Sync ──
   ipcMain.handle('db:sync:count', () => repo.syncQueueCount());
   ipcMain.handle('db:sync:trigger', () => syncService.drain());
 }
+
+// ─── Custom protocol for serving local audio files ───────────
+// Must be registered before app.whenReady()
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'dd-file',
+    privileges: { secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+  },
+]);
 
 // ─── Single instance lock ────────────────────────────────────
 
@@ -432,6 +846,70 @@ if (!gotTheLock) {
   // App lifecycle
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.decisiondesk.desktop');
+
+    // Serve local files via dd-file:// protocol (audio playback from renderer)
+    // Supports Range requests for audio seeking
+    protocol.handle('dd-file', (request) => {
+      try {
+        const filePath = decodeURIComponent(new URL(request.url).pathname);
+        if (!existsSync(filePath)) {
+          return new Response('File not found', { status: 404 });
+        }
+        const stat = statSync(filePath);
+        const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+        const mimeMap: Record<string, string> = {
+          webm: 'audio/webm', mp3: 'audio/mpeg', m4a: 'audio/mp4',
+          wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/ogg',
+        };
+        const contentType = mimeMap[ext] ?? 'application/octet-stream';
+
+        const makeStream = (nodeStream: ReturnType<typeof createReadStream>) => {
+          let closed = false;
+          return new ReadableStream({
+            start(controller) {
+              nodeStream.on('data', (chunk) => {
+                if (closed) return;
+                controller.enqueue(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+              });
+              nodeStream.on('end', () => { if (!closed) { closed = true; controller.close(); } });
+              nodeStream.on('error', (err) => { if (!closed) { closed = true; controller.error(err); } });
+            },
+            cancel() { closed = true; nodeStream.destroy(); },
+          });
+        };
+
+        const rangeHeader = request.headers.get('Range');
+        if (rangeHeader) {
+          const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader);
+          if (match) {
+            const start = parseInt(match[1]);
+            const end = match[2] ? parseInt(match[2]) : stat.size - 1;
+            return new Response(makeStream(createReadStream(filePath, { start, end })), {
+              status: 206,
+              headers: {
+                'Content-Type': contentType,
+                'Content-Length': String(end - start + 1),
+                'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+                'Accept-Ranges': 'bytes',
+              },
+            });
+          }
+        }
+
+        // Full file response with Accept-Ranges header to enable seeking
+        return new Response(makeStream(createReadStream(filePath)), {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(stat.size),
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      } catch (err) {
+        console.error('[dd-file] protocol error:', err);
+        return new Response('Internal error', { status: 500 });
+      }
+    });
 
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window);

@@ -43,7 +43,7 @@ public class SummaryService {
     private static final BigDecimal USD_TO_BRL = new BigDecimal("5.0");
     private static final String DEFAULT_USER = "default";
     private static final String DEFAULT_PROVIDER = "ollama";
-    private static final String DEFAULT_MODEL = "qwen2.5:14b";
+    private static final String DEFAULT_MODEL = "qwen3:14b";
 
     private final TranscriptRepository transcriptRepository;
     private final SummaryRepository summaryRepository;

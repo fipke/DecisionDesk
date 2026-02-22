@@ -90,6 +90,10 @@ export class ApiService {
     }
   }
 
+  async pushTranscript(meetingId: string, text: string, language: string): Promise<void> {
+    await this.client.put(`/api/v1/meetings/${meetingId}/transcript`, { text, language });
+  }
+
   // ─── Sync API (outbox push) ──────────────────────────────────
 
   async syncMeeting(payload: Record<string, unknown>): Promise<void> {
@@ -124,8 +128,9 @@ export class ApiService {
     await this.client.delete(`/api/v1/people/${id}`);
   }
 
-  async syncNoteBlock(payload: Record<string, unknown>): Promise<void> {
-    await this.client.put(`/api/v1/meetings/${payload.meetingId}/notes/${payload.id}`, payload);
+  async syncNoteBlock(_payload: Record<string, unknown>): Promise<void> {
+    // Backend uses section-based PATCH endpoints (/notes/agenda, /notes/live, /notes/post),
+    // not per-block CRUD. Skip sync — note blocks are local-first.
   }
 
   async deleteNoteBlock(id: string): Promise<void> {
@@ -152,6 +157,27 @@ export class ApiService {
   async generateSummary(meetingId: string, templateId?: string): Promise<any> {
     const response = await this.client.post(`/api/v1/meetings/${meetingId}/summarize`, {
       templateId: templateId ?? null,
+    });
+    return response.data;
+  }
+
+  async generateSummaryCustom(meetingId: string, userPromptOverride: string): Promise<any> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/summarize`, {
+      userPromptOverride,
+    });
+    return response.data;
+  }
+
+  async chatWithMeeting(meetingId: string, message: string, provider?: string, model?: string): Promise<{
+    answer: string;
+    provider: string;
+    model: string;
+    tokensUsed: number;
+  }> {
+    const response = await this.client.post(`/api/v1/meetings/${meetingId}/chat`, {
+      message,
+      provider: provider ?? null,
+      model: model ?? null,
     });
     return response.data;
   }

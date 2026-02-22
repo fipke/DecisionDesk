@@ -27,6 +27,7 @@ export interface Meeting {
   meetingTypeName: string | null;
   tags: Record<string, string>;
   title: string | null;
+  summarySnippet: string | null;
   updatedAt: string | null;
 }
 
@@ -125,6 +126,15 @@ export interface Summary {
   createdAt: string;
 }
 
+// ─── AI Chat ─────────────────────────────────────────────────
+
+export interface ChatResponse {
+  answer: string;
+  provider: string;
+  model: string;
+  tokensUsed: number;
+}
+
 // ─── Meeting Series (recurring) ──────────────────────────────
 
 export interface MeetingSeries {
@@ -149,6 +159,14 @@ export interface Template {
   id: string;
   name: string;
   bodyMarkdown: string;
+  description?: string;
+  systemPrompt?: string;
+  userPromptTemplate?: string;
+  outputFormat?: string;
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+  isDefault?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -170,6 +188,17 @@ export interface SyncQueueItem {
 
 // ─── Settings ────────────────────────────────────────────────
 
+export interface AiTaskConfig {
+  provider: string;
+  model: string;
+}
+
+export interface AiConfig {
+  summarization: AiTaskConfig;
+  extraction: AiTaskConfig;
+  chat: AiTaskConfig;
+}
+
 export interface Settings {
   apiUrl: string;
   whisperModel: string;
@@ -178,6 +207,55 @@ export interface Settings {
   huggingfaceToken?: string;
   autoAcceptJobs: boolean;
   notificationsEnabled: boolean;
+  /** When true, all AI features default to local Ollama instead of cloud. */
+  preferLocal: boolean;
+  aiConfig?: AiConfig;
+}
+
+// ─── AI Participant Extraction ──────────────────────────────
+
+export interface ParticipantSuggestion {
+  name: string;
+  role: PersonRole;
+  confidence: number;
+}
+
+// ─── People → Meetings View ────────────────────────────────
+
+export interface PersonMeetingRow {
+  meetingId: string;
+  title: string | null;
+  createdAt: string;
+  role: string;
+  talkTimeSec: number;
+}
+
+// ─── Action Items (cross-meeting tracking) ───────────────────
+
+export type ActionItemStatus = 'open' | 'done';
+
+export interface ActionItem {
+  id: string;
+  meetingId: string;
+  seriesId: string | null;
+  content: string;
+  assigneeName: string | null;
+  assigneeId: string | null;
+  dueDate: string | null;
+  status: ActionItemStatus;
+  resolvedAt: string | null;
+  resolvedInMeetingId: string | null;
+  ordinal: number;
+  createdAt: string;
+  updatedAt: string;
+  meetingTitle?: string;
+  meetingCreatedAt?: string;
+}
+
+export interface ExtractedActionItem {
+  content: string;
+  assignee: string | null;
+  dueDate: string | null;
 }
 
 // ─── Transcription queue (desktop ↔ backend) ─────────────────

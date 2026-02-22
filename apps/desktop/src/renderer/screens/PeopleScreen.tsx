@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Person } from '../../shared/types';
+import type { Person, PersonMeetingRow } from '../../shared/types';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -156,10 +157,14 @@ function PersonModal({
 
 function PersonCard({
   person,
+  isSelected,
+  onSelect,
   onEdit,
   onDelete,
 }: {
   person: Person;
+  isSelected: boolean;
+  onSelect: (person: Person) => void;
   onEdit: (person: Person) => void;
   onDelete: (person: Person) => void;
 }) {
@@ -167,9 +172,26 @@ function PersonCard({
 
   return (
     <div
-      className="group relative cursor-pointer rounded-xl border border-dd-border bg-dd-surface p-4 flex flex-col items-center text-center gap-3 transition-colors hover:border-indigo-500/40"
-      onClick={() => onEdit(person)}
+      className={`group relative cursor-pointer rounded-xl border bg-dd-surface p-4 flex flex-col items-center text-center gap-3 transition-colors hover:border-indigo-500/40 ${
+        isSelected ? 'border-indigo-500 bg-indigo-500/5' : 'border-dd-border'
+      }`}
+      onClick={() => onSelect(person)}
     >
+      {/* Edit button — visible on hover */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(person);
+        }}
+        title="Editar pessoa"
+        className="absolute left-2 top-2 rounded-md p-1 text-slate-600 opacity-0 transition-opacity hover:bg-indigo-500/20 hover:text-indigo-400 group-hover:opacity-100"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+      </button>
+
       {/* Delete button — visible on hover */}
       <button
         onClick={(e) => {
@@ -197,6 +219,124 @@ function PersonCard({
         )}
         {person.email && (
           <p className="mt-0.5 text-xs text-slate-500 truncate">{person.email}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── PersonDetailPanel ──────────────────────────────────────
+
+function PersonDetailPanel({
+  person,
+  onClose,
+}: {
+  person: Person;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+
+  const { data: meetings = [], isLoading } = useQuery({
+    queryKey: ['person-meetings', person.id],
+    queryFn: () => window.electronAPI.db.listMeetingsForPerson(person.id),
+  });
+
+  const totalMeetings = meetings.length;
+  const totalTalkTime = meetings.reduce((sum, m) => sum + m.talkTimeSec, 0);
+
+  function formatDuration(sec: number): string {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m} min`;
+  }
+
+  const initial = person.displayName.charAt(0).toUpperCase();
+
+  return (
+    <div className="w-80 shrink-0 border-l border-dd-border bg-dd-surface overflow-y-auto">
+      {/* Header */}
+      <div className="sticky top-0 bg-dd-surface border-b border-dd-border p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-700 text-sm font-semibold text-white">
+              {initial}
+            </div>
+            <div>
+              <p className="font-medium text-slate-100">{person.displayName}</p>
+              {person.email && (
+                <p className="text-xs text-slate-500">{person.email}</p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 hover:bg-dd-elevated hover:text-slate-200"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {person.notes && (
+          <p className="mt-2 text-xs text-slate-400">{person.notes}</p>
+        )}
+
+        {/* Stats */}
+        <div className="mt-3 flex gap-4">
+          <div>
+            <p className="text-lg font-bold text-slate-100">{totalMeetings}</p>
+            <p className="text-[10px] text-slate-500">reuniões</p>
+          </div>
+          {totalTalkTime > 0 && (
+            <div>
+              <p className="text-lg font-bold text-slate-100">{formatDuration(totalTalkTime)}</p>
+              <p className="text-[10px] text-slate-500">tempo de fala</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Meeting list */}
+      <div className="p-4 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Reuniões</p>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-dd-border border-t-indigo-400" />
+          </div>
+        ) : meetings.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-6">Nenhuma reunião encontrada</p>
+        ) : (
+          meetings.map((m) => (
+            <button
+              key={m.meetingId}
+              onClick={() => navigate(`/meetings/${m.meetingId}`)}
+              className="w-full rounded-lg border border-dd-border bg-dd-elevated p-3 text-left hover:border-indigo-500/30 transition-colors"
+            >
+              <p className="text-sm font-medium text-slate-200 truncate">
+                {m.title ?? 'Gravação'}
+              </p>
+              <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
+                <span>
+                  {new Date(m.createdAt).toLocaleDateString('pt-BR', {
+                    day: 'numeric', month: 'short',
+                  })}
+                </span>
+                <span className={`rounded-full px-1.5 py-0.5 font-medium ${
+                  m.role === 'participant'
+                    ? 'bg-emerald-900/40 text-emerald-400'
+                    : 'bg-blue-900/40 text-blue-400'
+                }`}>
+                  {m.role === 'participant' ? 'participante' : 'mencionado'}
+                </span>
+                {m.talkTimeSec > 0 && (
+                  <span>{formatDuration(m.talkTimeSec)}</span>
+                )}
+              </div>
+            </button>
+          ))
         )}
       </div>
     </div>
@@ -257,6 +397,7 @@ export function PeopleScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [deletingPerson, setDeletingPerson] = useState<Person | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -375,85 +516,97 @@ export function PeopleScreen() {
   }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100">Pessoas</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            {people.length} participante{people.length !== 1 ? 's' : ''} registrado{people.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Adicionar pessoa
-        </button>
-      </div>
-
-      {/* Search bar */}
-      <div className="relative mb-6">
-        <svg
-          className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por nome ou email..."
-          className="w-full rounded-lg border border-dd-border bg-dd-surface py-2.5 pl-9 pr-4 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-        />
-        {search && (
+    <div className="flex h-full">
+      <div className="flex-1 overflow-auto p-6">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-100">Pessoas</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              {people.length} participante{people.length !== 1 ? 's' : ''} registrado{people.length !== 1 ? 's' : ''}
+            </p>
+          </div>
           <button
-            onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
+            Adicionar pessoa
           </button>
+        </div>
+
+        {/* Search bar */}
+        <div className="relative mb-6">
+          <svg
+            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome ou email..."
+            className="w-full rounded-lg border border-dd-border bg-dd-surface py-2.5 pl-9 pr-4 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Content */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-dd-border border-t-indigo-400" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-dd-border bg-dd-surface/50 py-16">
+            <svg className="h-16 w-16 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <p className="mt-4 text-lg font-medium text-slate-400">
+              {search ? 'Nenhuma pessoa encontrada' : 'Nenhuma pessoa cadastrada'}
+            </p>
+            {!search && (
+              <p className="mt-1 text-sm text-slate-500">
+                Adicione participantes para associar às gravações
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className={`grid gap-3 ${selectedPerson ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
+            {filtered.map((person) => (
+              <PersonCard
+                key={person.id}
+                person={person}
+                isSelected={selectedPerson?.id === person.id}
+                onSelect={setSelectedPerson}
+                onEdit={openEdit}
+                onDelete={setDeletingPerson}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-dd-border border-t-indigo-400" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-dd-border bg-dd-surface/50 py-16">
-          <svg className="h-16 w-16 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-          <p className="mt-4 text-lg font-medium text-slate-400">
-            {search ? 'Nenhuma pessoa encontrada' : 'Nenhuma pessoa cadastrada'}
-          </p>
-          {!search && (
-            <p className="mt-1 text-sm text-slate-500">
-              Adicione participantes para associar às gravações
-            </p>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {filtered.map((person) => (
-            <PersonCard
-              key={person.id}
-              person={person}
-              onEdit={openEdit}
-              onDelete={setDeletingPerson}
-            />
-          ))}
-        </div>
+      {/* Detail panel */}
+      {selectedPerson && (
+        <PersonDetailPanel
+          person={selectedPerson}
+          onClose={() => setSelectedPerson(null)}
+        />
       )}
 
       {/* Create / Edit modal */}

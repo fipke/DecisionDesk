@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { MeetingSpeaker, Person } from '../../../shared/types';
+import type { MeetingSpeaker, Person, ParticipantSuggestion } from '../../../shared/types';
 import { getSpeakerColor } from './speakerColors';
 
 interface SpeakerPanelProps {
@@ -27,6 +27,46 @@ export function SpeakerPanel({
 }: SpeakerPanelProps) {
   const queryClient = useQueryClient();
   const [mergeSelection, setMergeSelection] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<ParticipantSuggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  // Read preferLocal setting
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => window.electronAPI.settings.get(),
+  });
+
+  const handleSuggest = async () => {
+    setLoadingSuggestions(true);
+    try {
+      const preferLocal = (settings as any)?.preferLocal ?? true;
+      const result = preferLocal
+        ? await window.electronAPI.ollama.extractParticipants(meetingId)
+        : await window.electronAPI.api.extractParticipants(meetingId);
+      setSuggestions(result);
+    } catch {
+      // silent fail
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const handleAcceptSuggestion = async (s: ParticipantSuggestion) => {
+    // Create or find person, add as meeting person
+    const person = await window.electronAPI.db.upsertPerson({ displayName: s.name });
+    await window.electronAPI.db.addMeetingPerson({
+      meetingId,
+      personId: person.id,
+      role: s.role,
+      createdAt: new Date().toISOString(),
+    });
+    setSuggestions((prev) => prev.filter((x) => x.name !== s.name));
+    queryClient.invalidateQueries({ queryKey: ['meeting-people', meetingId] });
+  };
+
+  const handleRejectSuggestion = (s: ParticipantSuggestion) => {
+    setSuggestions((prev) => prev.filter((x) => x.name !== s.name));
+  };
 
   const mergeMutation = useMutation({
     mutationFn: ({ keepId, absorbId }: { keepId: string; absorbId: string }) =>
@@ -107,6 +147,64 @@ export function SpeakerPanel({
             'Identificar speakers'
           )}
         </button>
+      </div>
+
+      {/* AI participant suggestions */}
+      <div className="border-t border-dd-border pt-3">
+        <button
+          onClick={handleSuggest}
+          disabled={loadingSuggestions}
+          className="w-full rounded-lg border border-indigo-800 bg-indigo-950/30 px-3 py-2 text-xs font-medium text-indigo-300 hover:bg-indigo-950/50 disabled:opacity-50"
+        >
+          {loadingSuggestions ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-500/30 border-t-indigo-400" />
+              Analisando transcrição...
+            </span>
+          ) : (
+            'Sugerir participantes'
+          )}
+        </button>
+
+        {suggestions.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {suggestions.map((s) => (
+              <div key={s.name} className="flex items-center gap-2 rounded-lg border border-dd-border bg-dd-surface p-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-slate-200 truncate">{s.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      s.role === 'participant'
+                        ? 'bg-emerald-900/40 text-emerald-400'
+                        : 'bg-blue-900/40 text-blue-400'
+                    }`}>
+                      {s.role === 'participant' ? 'participante' : 'mencionado'}
+                    </span>
+                    <span className="text-[10px] text-slate-500">{Math.round(s.confidence * 100)}%</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleAcceptSuggestion(s)}
+                  className="rounded p-1 text-emerald-400 hover:bg-emerald-950/40 transition-colors"
+                  title="Aceitar"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleRejectSuggestion(s)}
+                  className="rounded p-1 text-red-400 hover:bg-red-950/40 transition-colors"
+                  title="Rejeitar"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

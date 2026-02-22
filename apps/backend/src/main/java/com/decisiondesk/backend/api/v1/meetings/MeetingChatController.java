@@ -59,7 +59,7 @@ public class MeetingChatController {
         String systemPrompt = String.format(CHAT_SYSTEM_PROMPT, transcriptText);
         AiCompletionProvider provider = aiProviderRouter.getProvider(
                 request.provider() != null ? request.provider() : "ollama");
-        String model = request.model() != null ? request.model() : "qwen2.5:14b";
+        String model = request.model() != null ? request.model() : "qwen3:14b";
 
         AiCompletion completion = provider.chatCompletion(
                 systemPrompt,

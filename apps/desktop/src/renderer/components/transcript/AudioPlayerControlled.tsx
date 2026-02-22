@@ -32,7 +32,11 @@ export const AudioPlayerControlled = forwardRef<AudioPlayerHandle, AudioPlayerCo
       staleTime: Infinity,
     });
 
-    const src = recordingUri || localAudioPath;
+    // Convert local file paths to dd-file:// protocol URLs for Electron renderer
+    const rawSrc = recordingUri || localAudioPath;
+    const src = rawSrc && !rawSrc.startsWith('dd-file://') && !rawSrc.startsWith('http')
+      ? `dd-file://${encodeURI(rawSrc)}`
+      : rawSrc;
 
     useImperativeHandle(ref, () => ({
       seek(seconds: number) {

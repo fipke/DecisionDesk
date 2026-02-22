@@ -20,6 +20,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "^5.60.0",
     "axios": "^1.7.8",
     "better-sqlite3": "^12.6.2",
@@ -27,6 +28,7 @@
     "electron-updater": "^6.3.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.0.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.2"
